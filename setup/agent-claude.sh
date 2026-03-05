@@ -12,7 +12,7 @@ resolve_lang
 PLATFORM="$(detect_platform)"
 
 ensure_npm_for_fallback() {
-  if command -v npm > /dev/null 2>&1; then
+  if command -v npm > /dev/null 2>&1 || activate_nvm_default_if_available; then
     return 0
   fi
   if ! prompt_yes_no \
@@ -21,6 +21,7 @@ ensure_npm_for_fallback() {
     return 1
   fi
   "$SCRIPT_DIR/install-node.sh"
+  command -v npm > /dev/null 2>&1 || activate_nvm_default_if_available
 }
 
 say "注意: Claude Code は環境によってネイティブインストール推奨の場合があります。" \

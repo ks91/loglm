@@ -90,11 +90,17 @@ install_node_with_nvm_lts() {
     return 1
   fi
 
+  if [[ -f "$HOME/.npmrc" ]]; then
+    # nvm and fixed npm prefix/globalconfig in ~/.npmrc are incompatible.
+    sed -i.bak '/^[[:space:]]*prefix[[:space:]]*=.*/d;/^[[:space:]]*globalconfig[[:space:]]*=.*/d' "$HOME/.npmrc" 2>/dev/null || true
+    rm -f "$HOME/.npmrc.bak"
+  fi
+
   say "nvm で最新LTSの Node.js をインストールします..." \
       "Installing latest LTS Node.js with nvm..."
-  nvm install --lts
+  nvm install --delete-prefix --lts
   nvm alias default 'lts/*'
-  nvm use default
+  nvm use --delete-prefix default
 }
 
 install_homebrew() {

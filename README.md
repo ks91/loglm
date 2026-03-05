@@ -72,6 +72,7 @@ If Homebrew is missing on macOS, setup can install Homebrew interactively.
 When npm fallback is used and npm is missing, setup can install Node.js / npm interactively.
 On Linux/WSL/Raspberry Pi/Chrome OS, Node.js is installed via `nvm` (latest LTS) by setup.
 When npm fallback is used, setup configures npm global installs to user space (`~/.local`) to avoid permission errors.
+If `~/.npmrc` has incompatible `prefix`/`globalconfig` entries, setup adjusts them automatically for nvm.
 
 Claude Code (all supported platforms):
 

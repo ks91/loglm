@@ -196,9 +196,19 @@ ensure_dir_on_path_now_and_profile() {
 }
 
 prepare_npm_user_prefix() {
-  local prefix npm_bin
+  local prefix npm_bin npm_path
   if ! command -v npm > /dev/null 2>&1; then
     return 1
+  fi
+
+  npm_path="$(command -v npm || true)"
+  if [[ "$npm_path" == *"/.nvm/"* ]]; then
+    if [[ -f "$HOME/.npmrc" ]]; then
+      # nvm-managed npm must not keep explicit prefix/globalconfig in ~/.npmrc.
+      sed -i.bak '/^[[:space:]]*prefix[[:space:]]*=.*/d;/^[[:space:]]*globalconfig[[:space:]]*=.*/d' "$HOME/.npmrc" 2>/dev/null || true
+      rm -f "$HOME/.npmrc.bak"
+    fi
+    return 0
   fi
 
   prefix="$HOME/.local"
@@ -206,4 +216,21 @@ prepare_npm_user_prefix() {
   mkdir -p "$npm_bin"
   npm config set prefix "$prefix" > /dev/null
   ensure_dir_on_path_now_and_profile "$npm_bin"
+}
+
+activate_nvm_default_if_available() {
+  local nvm_dir
+  nvm_dir="${NVM_DIR:-$HOME/.nvm}"
+  if [[ ! -s "$nvm_dir/nvm.sh" ]]; then
+    return 1
+  fi
+
+  # shellcheck disable=SC1090
+  . "$nvm_dir/nvm.sh"
+
+  if command -v nvm > /dev/null 2>&1; then
+    nvm use --silent default > /dev/null 2>&1 || nvm use --silent --lts > /dev/null 2>&1 || true
+  fi
+
+  command -v npm > /dev/null 2>&1
 }
