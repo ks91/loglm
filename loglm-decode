@@ -1,0 +1,289 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  local cmd
+  cmd="$(basename "$0")"
+  cat <<'EOF'
+Usage:
+EOF
+  cat <<EOF
+  $cmd [options] <input_file>...
+
+Options:
+  -o, --output <file>  Output file path (single input only)
+  -h, --help           Show this help
+
+Behavior:
+  - Positional arguments are always treated as input files.
+  - Without -o, each input is written to "<input_basename>.decoded.txt".
+    Example: logs/codex-log-20260217.txt -> logs/codex-log-20260217.decoded.txt
+EOF
+}
+
+derive_output_path() {
+  local in_file="$1"
+  local dir base stem
+  dir="$(dirname "$in_file")"
+  base="$(basename "$in_file")"
+  stem="${base%.*}"
+  if [[ "$stem" == "$base" ]]; then
+    printf '%s/%s.decoded.txt\n' "$dir" "$base"
+  else
+    printf '%s/%s.decoded.txt\n' "$dir" "$stem"
+  fi
+}
+
+decode_one() {
+  local in_file="$1"
+  local out_file="$2"
+  local tmp_file
+  tmp_file="$(/usr/bin/mktemp)"
+  trap 'rm -f "$tmp_file"' RETURN
+
+  perl -e '
+use strict;
+use warnings;
+
+binmode(STDIN);
+binmode(STDOUT);
+
+my $NORMAL = 0;
+my $ESC = 1;
+my $CSI = 2;
+my $OSC = 3;
+my $OSC_ESC = 4;
+my $DCS = 5;
+my $DCS_ESC = 6;
+
+my $state = $NORMAL;
+my $out = q{};
+my $c;
+my $pending_cr = 0;
+my $csi_param = q{};
+
+while (read(STDIN, $c, 1)) {
+  my $b = ord($c);
+
+  if ($state == $NORMAL) {
+    if ($pending_cr) {
+      if ($b == 0x0A) {
+        # CR+LF (including CR+CR+LF): single newline.
+        $out .= "\n";
+        $pending_cr = 0;
+        next;
+      } elsif ($b == 0x0D) {
+        # Consecutive CRs (e.g. Claude Code uses \r\r\n): ignore extra CR.
+        next;
+      } else {
+        # Lone CR: move to start of current line (overwrite semantics).
+        my $last_nl = rindex($out, "\n");
+        if ($last_nl >= 0) {
+          substr($out, $last_nl + 1) = q{};
+        } else {
+          $out = q{};
+        }
+        $pending_cr = 0;
+        # Fall through to process $b normally.
+      }
+    }
+
+    if ($b == 0x1B) { # ESC
+      $state = $ESC;
+    } elsif ($b == 0x08) { # BS
+      substr($out, -1, 1, q{}) if length($out) > 0;
+    } elsif ($b == 0x0D) { # CR
+      # Defer until next byte so CRLF does not become double newline.
+      $pending_cr = 1;
+    } elsif ($b == 0x0A || $b == 0x09) { # LF/TAB
+      $out .= $c;
+    } elsif ($b < 0x20 || $b == 0x7F) {
+      # drop other C0 controls and DEL
+    } else {
+      $out .= $c;
+    }
+    next;
+  }
+
+  if ($state == $ESC) {
+    if ($b == ord("[")) {
+      $state = $CSI;
+      $csi_param = q{};
+    } elsif ($b == ord("]")) {
+      $state = $OSC;
+    } elsif ($b == ord("P")) {
+      $state = $DCS;
+    } else {
+      # single escape sequence
+      $state = $NORMAL;
+    }
+    next;
+  }
+
+  if ($state == $CSI) {
+    if ($b >= 0x40 && $b <= 0x7E) {
+      # CSI final byte.
+      if ($b == ord("C")) {
+        # Cursor Forward: many TUIs (e.g. Claude Code/Ink) use ESC[nC
+        # instead of literal spaces for inter-word/column spacing.
+        my $n = ($csi_param =~ /^(\d+)$/) ? int($csi_param) : 1;
+        $out .= " " x $n if $n > 0;
+      }
+      $state = $NORMAL;
+    } else {
+      $csi_param .= $c;
+    }
+    next;
+  }
+
+  if ($state == $OSC) {
+    if ($b == 0x07) { # BEL
+      $state = $NORMAL;
+    } elsif ($b == 0x1B) {
+      $state = $OSC_ESC;
+    }
+    next;
+  }
+
+  if ($state == $OSC_ESC) {
+    if ($b == ord("\\")) {
+      $state = $NORMAL;
+    } else {
+      $state = $OSC;
+    }
+    next;
+  }
+
+  if ($state == $DCS) {
+    if ($b == 0x1B) {
+      $state = $DCS_ESC;
+    }
+    next;
+  }
+
+  if ($state == $DCS_ESC) {
+    if ($b == ord("\\")) {
+      $state = $NORMAL;
+    } else {
+      $state = $DCS;
+    }
+    next;
+  }
+}
+
+if ($pending_cr) {
+  $out .= "\n";
+}
+
+# Trim trailing whitespace from each line (leftover from ESC[nC padding).
+$out =~ s/[ \t]+\n/\n/g;
+$out =~ s/[ \t]+\z//;
+
+# Collapse 3+ consecutive newlines to 2 (at most one blank line).
+$out =~ s/\n{3,}/\n\n/g;
+
+# Keep only well-formed UTF-8 byte sequences.
+my @valid = ($out =~ /(
+    [\x00-\x7F]
+  | [\xC2-\xDF][\x80-\xBF]
+  | \xE0[\xA0-\xBF][\x80-\xBF]
+  | [\xE1-\xEC\xEE-\xEF][\x80-\xBF]{2}
+  | \xED[\x80-\x9F][\x80-\xBF]
+  | \xF0[\x90-\xBF][\x80-\xBF]{2}
+  | [\xF1-\xF3][\x80-\xBF]{3}
+  | \xF4[\x80-\x8F][\x80-\xBF]{2}
+)/xg);
+print STDOUT join(q{}, @valid);
+' < "$in_file" > "$tmp_file"
+
+  mv "$tmp_file" "$out_file"
+  trap - RETURN
+
+  echo "decoded: $in_file -> $out_file"
+}
+
+output_path=""
+inputs=()
+while (($# > 0)); do
+  case "$1" in
+    -o|--output)
+      if (($# < 2)); then
+        echo "error: missing value for $1" >&2
+        exit 2
+      fi
+      output_path="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while (($# > 0)); do
+        inputs+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      echo "error: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      inputs+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if ((${#inputs[@]} == 0)); then
+  echo "error: at least one input file is required." >&2
+  usage >&2
+  exit 2
+fi
+
+filtered_inputs=()
+for in_file in "${inputs[@]}"; do
+  if [[ "$in_file" == *.decoded.txt ]]; then
+    continue
+  fi
+  filtered_inputs+=("$in_file")
+done
+
+if ((${#filtered_inputs[@]} == 0)); then
+  echo "error: all input files were skipped (*.decoded.txt)." >&2
+  exit 2
+fi
+
+inputs=("${filtered_inputs[@]}")
+
+if [[ -n "$output_path" && ${#inputs[@]} -ne 1 ]]; then
+  echo "error: --output can be used only with a single input file." >&2
+  exit 2
+fi
+
+for in_file in "${inputs[@]}"; do
+  if [[ ! -f "$in_file" ]]; then
+    echo "input file not found: $in_file" >&2
+    exit 1
+  fi
+done
+
+if [[ -n "$output_path" ]]; then
+  if [[ "${inputs[0]}" == "$output_path" ]]; then
+    echo "error: input and output must be different files." >&2
+    exit 2
+  fi
+  decode_one "${inputs[0]}" "$output_path"
+  exit 0
+fi
+
+for in_file in "${inputs[@]}"; do
+  out_file="$(derive_output_path "$in_file")"
+  if [[ "$in_file" == "$out_file" ]]; then
+    echo "error: input and output must be different files: $in_file" >&2
+    exit 2
+  fi
+  decode_one "$in_file" "$out_file"
+done

@@ -14,6 +14,36 @@ wget -qO- https://raw.githubusercontent.com/ks91/loglm/main/install.sh | bash
 ```
 
 The installer places `loglm` in `~/.local/bin` by default.
+It also installs:
+
+- `loglm-decode` into `~/.local/bin`
+- setup scripts into `~/.local/share/loglm/setup`
+
+## Uninstall
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ks91/loglm/main/uninstall.sh | bash
+```
+
+or
+
+```bash
+wget -qO- https://raw.githubusercontent.com/ks91/loglm/main/uninstall.sh | bash
+```
+
+Removes only:
+
+- `loglm`
+- `loglm-decode`
+- `~/.local/share/loglm/setup/*` managed by loglm
+
+## Supported Platforms
+
+- macOS
+- Ubuntu
+- Ubuntu on WSL2
+- Raspberry Pi OS
+- Chrome OS (Linux container / Crostini)
 
 ## Usage
 
@@ -29,3 +59,63 @@ loglm
 - `./.loglm_agent` for the selected agent
 
 Both are scoped to the directory where you run `loglm`.
+
+If the selected agent command is missing (`codex`, `claude`, or `gemini`),
+`loglm` prompts and runs an installer from `~/.local/share/loglm/setup`.
+Before agent install, `doctor.sh` checks required tools (such as `script`, Node.js, and npm).
+
+Setup dialogue language:
+
+- auto: from locale (`LC_ALL` > `LC_MESSAGES` > `LANG`; `ja*` => Japanese, otherwise English)
+- override with `LOGLM_LANG=ja|en|both`
+
+Example:
+
+```bash
+LOGLM_LANG=both loglm
+```
+
+## Options
+
+- `--new`: Start a new context (ignore saved session).
+- `--resume`: Open the agent's built-in session picker.
+- `--agent`: Re-select the AI coding agent (`codex` / `claude` / `gemini`).
+- `-X`, `--dangerous`: Start the agent in dangerous/no-approval mode.
+  - `codex`: `--dangerously-bypass-approvals-and-sandbox`
+  - `claude`: `--dangerously-skip-permissions`
+  - `gemini`: `--yolo`
+- `-h`, `--help`: Show help.
+
+## Decode Logs
+
+Decode raw `script` logs before reading:
+
+```bash
+loglm-decode logs/loglm-codex-log-20260305.txt
+```
+
+This writes:
+
+- `logs/loglm-codex-log-20260305.decoded.txt`
+
+## Install Layout
+
+- `~/.local/bin/loglm`
+- `~/.local/bin/loglm-decode`
+- `~/.local/share/loglm/setup/ensure-agent.sh`
+- `~/.local/share/loglm/setup/doctor.sh`
+- `~/.local/share/loglm/setup/install-node.sh`
+- `~/.local/share/loglm/setup/platform-detect.sh`
+- `~/.local/share/loglm/setup/lib.sh`
+- `~/.local/share/loglm/setup/agent-codex.sh`
+- `~/.local/share/loglm/setup/agent-claude.sh`
+- `~/.local/share/loglm/setup/agent-gemini.sh`
+
+Environment variables:
+
+- `LOGLM_INSTALL_DIR`: install target for executables (default: `~/.local/bin`)
+- `LOGLM_HOME`: install target for setup scripts (default: `~/.local/share/loglm`)
+- `REPO_RAW_BASE`: raw file base URL used by installer
+- `LOGLM_INSTALL_DIR` / `LOGLM_HOME` are also honored by `uninstall.sh`
+- `LOGLM_LANG`: setup prompt language (`ja`, `en`, or `both`)
+- `LOGLM_PLATFORM`: platform override for setup scripts (advanced/debug)

@@ -6,6 +6,9 @@ WORK_DIR="$(pwd -P)"
 LOG_DIR="$WORK_DIR/logs"
 AGENT_FILE="$WORK_DIR/.loglm_agent"
 TODAY_LOCAL="$(date +%Y%m%d)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOGLM_HOME="${LOGLM_HOME:-$HOME/.local/share/loglm}"
+SETUP_DIR=""
 
 SUPPORTED_AGENTS=(codex claude gemini)
 
@@ -28,6 +31,34 @@ Options:
   -h, --help
       Show this help.
 EOF
+}
+
+resolve_setup_dir() {
+  if [[ -d "$SCRIPT_DIR/setup" ]]; then
+    SETUP_DIR="$SCRIPT_DIR/setup"
+    return 0
+  fi
+  if [[ -d "$LOGLM_HOME/setup" ]]; then
+    SETUP_DIR="$LOGLM_HOME/setup"
+    return 0
+  fi
+  return 1
+}
+
+ensure_agent_installed() {
+  local agent="$1"
+  if command -v "$agent" > /dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! resolve_setup_dir; then
+    echo "Error: setup scripts not found." >&2
+    echo "Expected '$SCRIPT_DIR/setup' or '$LOGLM_HOME/setup'." >&2
+    echo "Reinstall loglm and try again." >&2
+    exit 1
+  fi
+
+  "$SETUP_DIR/ensure-agent.sh" "$agent"
 }
 
 claude_has_history() {
@@ -130,6 +161,8 @@ else
     select_agent
   fi
 fi
+
+ensure_agent_installed "$AGENT"
 
 LOG_FILE="$LOG_DIR/loglm-${AGENT}-log-${TODAY_LOCAL}.txt"
 
