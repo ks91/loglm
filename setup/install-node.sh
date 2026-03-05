@@ -41,20 +41,46 @@ source_nvm() {
   return 1
 }
 
+ensure_download_tool_for_nvm() {
+  if command -v curl > /dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v wget > /dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v apt-get > /dev/null 2>&1; then
+    say "curl / wget が見つからないため、curl をインストールします..." \
+        "curl/wget not found; installing curl..."
+    run_as_root apt-get update
+    run_as_root apt-get install -y curl
+    if command -v curl > /dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  say "nvm のインストールには curl または wget が必要です。" \
+      "curl or wget is required to install nvm."
+  return 1
+}
+
 ensure_nvm_installed() {
   if source_nvm; then
     return 0
   fi
 
-  if ! command -v curl > /dev/null 2>&1; then
-    say "nvm のインストールには curl が必要です。" \
-        "curl is required to install nvm."
+  if ! ensure_download_tool_for_nvm; then
     return 1
   fi
 
   say "nvm をインストールします..." \
       "Installing nvm..."
-  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  if command -v curl > /dev/null 2>&1; then
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  else
+    wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  fi
   ensure_nvm_profile_init
   source_nvm
 }
