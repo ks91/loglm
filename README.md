@@ -70,6 +70,7 @@ On macOS, setup prefers Homebrew for agent installation when a brew package is a
 otherwise it falls back to npm.
 If Homebrew is missing on macOS, setup can install Homebrew interactively.
 When npm fallback is used and npm is missing, setup can install Node.js / npm interactively.
+When npm fallback is used, setup configures npm global installs to user space (`~/.local`) to avoid permission errors.
 
 Claude Code (all supported platforms):
 

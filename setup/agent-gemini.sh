@@ -53,13 +53,19 @@ if ! ensure_npm_for_fallback; then
   exit 1
 fi
 
+if ! prepare_npm_user_prefix; then
+  say "エラー: npm のユーザー領域設定に失敗しました。" \
+      "Error: failed to configure npm user prefix." >&2
+  exit 1
+fi
+
 say "npm で Gemini CLI をインストールします..." \
     "Installing Gemini CLI with npm..."
 if ! npm install -g @google/gemini-cli; then
   say "エラー: Gemini CLI のインストールに失敗しました。" \
       "Error: failed to install Gemini CLI." >&2
-  say "npm のグローバルパスに権限が必要な場合は管理者権限で再試行してください。" \
-      "Try again with elevated privileges if your npm global prefix requires it." >&2
+  say "npm 設定またはネットワーク接続を確認して再試行してください。" \
+      "Please check your npm settings or network connectivity and retry." >&2
   exit 1
 fi
 

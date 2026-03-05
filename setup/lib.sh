@@ -139,3 +139,71 @@ brew_install_candidates() {
 
   return 1
 }
+
+detect_profile_file() {
+  local shell_name
+  shell_name="$(basename "${SHELL:-}")"
+
+  case "$shell_name" in
+    zsh)
+      printf '%s\n' "$HOME/.zshrc"
+      ;;
+    bash)
+      if [[ -f "$HOME/.bashrc" ]]; then
+        printf '%s\n' "$HOME/.bashrc"
+      elif [[ -f "$HOME/.bash_profile" ]]; then
+        printf '%s\n' "$HOME/.bash_profile"
+      else
+        printf '%s\n' "$HOME/.bashrc"
+      fi
+      ;;
+    fish)
+      printf '%s\n' "$HOME/.config/fish/config.fish"
+      ;;
+    *)
+      printf '%s\n' "$HOME/.profile"
+      ;;
+  esac
+}
+
+ensure_dir_on_path_now_and_profile() {
+  local dir="$1"
+  local profile line
+
+  case ":$PATH:" in
+    *":$dir:"*) ;;
+    *) export PATH="$dir:$PATH" ;;
+  esac
+
+  profile="$(detect_profile_file)"
+  mkdir -p "$(dirname "$profile")"
+  touch "$profile"
+
+  if [[ "$(basename "$profile")" == "config.fish" ]]; then
+    line="fish_add_path -m \"$dir\""
+  else
+    line="export PATH=\"$dir:\$PATH\""
+  fi
+
+  if ! grep -Fqx "$line" "$profile"; then
+    {
+      printf '\n# Added by loglm setup\n'
+      printf '%s\n' "$line"
+    } >> "$profile"
+    say "PATH 設定を更新しました: $profile" \
+        "Updated PATH settings in: $profile"
+  fi
+}
+
+prepare_npm_user_prefix() {
+  local prefix npm_bin
+  if ! command -v npm > /dev/null 2>&1; then
+    return 1
+  fi
+
+  prefix="$HOME/.local"
+  npm_bin="$prefix/bin"
+  mkdir -p "$npm_bin"
+  npm config set prefix "$prefix" > /dev/null
+  ensure_dir_on_path_now_and_profile "$npm_bin"
+}
