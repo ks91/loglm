@@ -28,6 +28,76 @@ install_executable() {
   chmod +x "$dst"
 }
 
+path_contains_dir() {
+  local dir="$1"
+  case ":$PATH:" in
+    *":$dir:"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+detect_profile_file() {
+  local shell_name
+  shell_name="$(basename "${SHELL:-}")"
+
+  case "$shell_name" in
+    zsh)
+      if [[ -f "$HOME/.zshrc" ]]; then
+        printf '%s\n' "$HOME/.zshrc"
+      else
+        printf '%s\n' "$HOME/.zshrc"
+      fi
+      ;;
+    bash)
+      if [[ -f "$HOME/.bashrc" ]]; then
+        printf '%s\n' "$HOME/.bashrc"
+      elif [[ -f "$HOME/.bash_profile" ]]; then
+        printf '%s\n' "$HOME/.bash_profile"
+      else
+        printf '%s\n' "$HOME/.bashrc"
+      fi
+      ;;
+    fish)
+      printf '%s\n' "$HOME/.config/fish/config.fish"
+      ;;
+    *)
+      if [[ -f "$HOME/.profile" ]]; then
+        printf '%s\n' "$HOME/.profile"
+      else
+        printf '%s\n' "$HOME/.profile"
+      fi
+      ;;
+  esac
+}
+
+append_path_to_profile_if_needed() {
+  local profile line
+  if path_contains_dir "$BIN_DIR"; then
+    return 0
+  fi
+
+  profile="$(detect_profile_file)"
+  mkdir -p "$(dirname "$profile")"
+  touch "$profile"
+
+  if [[ "$(basename "$profile")" == "config.fish" ]]; then
+    line="fish_add_path -m \"$BIN_DIR\""
+  else
+    line="export PATH=\"$BIN_DIR:\$PATH\""
+  fi
+
+  if grep -Fqx "$line" "$profile"; then
+    return 0
+  fi
+
+  {
+    printf '\n# Added by loglm installer\n'
+    printf '%s\n' "$line"
+  } >> "$profile"
+
+  echo "Updated shell profile: $profile"
+}
+
 mkdir -p "$BIN_DIR" "$SETUP_DIR"
 
 install_executable "loglm" "$BIN_DIR/loglm"
@@ -44,10 +114,9 @@ install_executable "setup/agent-gemini.sh" "$SETUP_DIR/agent-gemini.sh"
 echo "Installed: $BIN_DIR/loglm"
 echo "Installed: $BIN_DIR/loglm-decode"
 echo "Setup scripts: $SETUP_DIR"
+
+append_path_to_profile_if_needed
+
 if ! command -v loglm > /dev/null 2>&1; then
-  cat <<EOF
-Note: '$BIN_DIR' is not in PATH.
-Add this to your shell profile:
-  export PATH="$BIN_DIR:\$PATH"
-EOF
+  echo "Open a new shell (or run 'source' on your profile) to use 'loglm'."
 fi
