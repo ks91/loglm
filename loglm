@@ -6,6 +6,7 @@ WORK_DIR="$(pwd -P)"
 LOG_DIR="$WORK_DIR/logs"
 AGENT_FILE="$WORK_DIR/.loglm_agent"
 TODAY_LOCAL="$(date +%Y%m%d)"
+NOW_LOCAL="$(date +%Y%m%d-%H%M%S)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGLM_HOME="${LOGLM_HOME:-$HOME/.local/share/loglm}"
 SETUP_DIR=""
@@ -23,6 +24,9 @@ Options:
       Open the agent's built-in session picker.
   --agent
       Re-select the AI coding agent (codex / claude / gemini).
+  --daily-log
+      Use one log file per day (legacy behavior).
+      By default, loglm creates a unique file per launch (timestamp + PID).
   -X, --dangerous
       Start the agent in dangerous/no-approval mode:
         codex  : --dangerously-bypass-approvals-and-sandbox
@@ -112,6 +116,7 @@ FORCE_NEW=0
 CHOOSE_RESUME=0
 DANGEROUS_MODE=0
 CHOOSE_AGENT=0
+DAILY_LOG=0
 
 while (($# > 0)); do
   case "$1" in
@@ -125,6 +130,10 @@ while (($# > 0)); do
       ;;
     --agent)
       CHOOSE_AGENT=1
+      shift
+      ;;
+    --daily-log)
+      DAILY_LOG=1
       shift
       ;;
     -X|--dangerous)
@@ -164,7 +173,11 @@ fi
 
 ensure_agent_installed "$AGENT"
 
-LOG_FILE="$LOG_DIR/loglm-${AGENT}-log-${TODAY_LOCAL}.txt"
+if [[ "$DAILY_LOG" -eq 1 ]]; then
+  LOG_FILE="$LOG_DIR/loglm-${AGENT}-log-${TODAY_LOCAL}.txt"
+else
+  LOG_FILE="$LOG_DIR/loglm-${AGENT}-log-${NOW_LOCAL}-pid$$.txt"
+fi
 
 case "$AGENT" in
   codex)

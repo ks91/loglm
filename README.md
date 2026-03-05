@@ -62,6 +62,9 @@ loglm
 - `./.loglm_agent` for the selected agent
 
 Both are scoped to the directory where you run `loglm`.
+By default, each launch writes to a unique log file:
+
+- `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
 
 If the selected agent command is missing (`codex`, `claude`, or `gemini`),
 `loglm` prompts and runs an installer from `~/.local/share/loglm/setup`.
@@ -95,6 +98,7 @@ LOGLM_LANG=both loglm
 - `--new`: Start a new context (ignore saved session).
 - `--resume`: Open the agent's built-in session picker.
 - `--agent`: Re-select the AI coding agent (`codex` / `claude` / `gemini`).
+- `--daily-log`: Use one log file per day (legacy behavior).
 - `-X`, `--dangerous`: Start the agent in dangerous/no-approval mode.
   - `codex`: `--dangerously-bypass-approvals-and-sandbox`
   - `claude`: `--dangerously-skip-permissions`
