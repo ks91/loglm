@@ -84,3 +84,58 @@ run_as_root() {
       "This action requires admin privileges, but 'sudo' was not found."
   return 1
 }
+
+ensure_homebrew() {
+  if command -v brew > /dev/null 2>&1; then
+    return 0
+  fi
+
+  if ! prompt_yes_no \
+    "Homebrew が見つかりません。今インストールしますか？" \
+    "Homebrew was not found. Install Homebrew now?"; then
+    return 2
+  fi
+
+  if ! command -v curl > /dev/null 2>&1; then
+    say "Homebrew のインストールには curl が必要です。" \
+        "curl is required to install Homebrew."
+    return 1
+  fi
+
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+
+  if command -v brew > /dev/null 2>&1; then
+    return 0
+  fi
+
+  return 1
+}
+
+brew_install_candidates() {
+  local label="$1"
+  shift
+  local pkg
+
+  for pkg in "$@"; do
+    if brew info --formula "$pkg" > /dev/null 2>&1; then
+      say "Homebrew (formula) で ${label} をインストールします: $pkg" \
+          "Installing ${label} with Homebrew (formula): $pkg"
+      brew install "$pkg"
+      return 0
+    fi
+    if brew info --cask "$pkg" > /dev/null 2>&1; then
+      say "Homebrew (cask) で ${label} をインストールします: $pkg" \
+          "Installing ${label} with Homebrew (cask): $pkg"
+      brew install --cask "$pkg"
+      return 0
+    fi
+  done
+
+  return 1
+}

@@ -5,11 +5,44 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib.sh"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/platform-detect.sh"
 
 resolve_lang
+PLATFORM="$(detect_platform)"
 
 say "注意: Claude Code は環境によってネイティブインストール推奨の場合があります。" \
     "Note: Claude Code may recommend native installation on some environments."
+
+if [[ "$PLATFORM" == "macos" ]]; then
+  if ensure_homebrew; then
+    if prompt_yes_no \
+      "Homebrew 版の Claude Code CLI を試しますか？" \
+      "Try installing Claude Code CLI via Homebrew?"; then
+      if brew_install_candidates "Claude Code CLI" claude-code anthropic-claude-code; then
+        say "Claude Code CLI のインストールが完了しました。" \
+            "Claude Code CLI installed."
+        exit 0
+      fi
+      say "Homebrew で Claude Code CLI の提供パッケージが見つからなかったため npm にフォールバックします。" \
+          "No Homebrew package was found for Claude Code CLI; falling back to npm."
+    else
+      say "Homebrew インストールをスキップしました。" \
+          "Skipped Homebrew installation."
+    fi
+  else
+    case "$?" in
+      2)
+        say "Homebrew セットアップをスキップしたため npm でインストールします。" \
+            "Homebrew setup was skipped; installing with npm."
+        ;;
+      *)
+        say "Homebrew セットアップに失敗したため npm でインストールします。" \
+            "Homebrew setup failed; installing with npm."
+        ;;
+    esac
+  fi
+fi
 
 if ! prompt_yes_no \
   "npm ベースのクイックインストールを実行しますか？" \

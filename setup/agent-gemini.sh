@@ -5,8 +5,33 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/lib.sh"
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/platform-detect.sh"
 
 resolve_lang
+PLATFORM="$(detect_platform)"
+if [[ "$PLATFORM" == "macos" ]]; then
+  if ensure_homebrew; then
+    if brew_install_candidates "Gemini CLI" gemini-cli google-gemini-cli; then
+      say "Gemini CLI のインストールが完了しました。" \
+          "Gemini CLI installed."
+      exit 0
+    fi
+    say "Homebrew で Gemini CLI の提供パッケージが見つからなかったため npm にフォールバックします。" \
+        "No Homebrew package was found for Gemini CLI; falling back to npm."
+  else
+    case "$?" in
+      2)
+        say "Homebrew セットアップをスキップしたため npm でインストールします。" \
+            "Homebrew setup was skipped; installing with npm."
+        ;;
+      *)
+        say "Homebrew セットアップに失敗したため npm でインストールします。" \
+            "Homebrew setup failed; installing with npm."
+        ;;
+    esac
+  fi
+fi
 
 if ! command -v npm > /dev/null 2>&1; then
   say "エラー: Gemini CLI のインストールには npm が必要です。" \

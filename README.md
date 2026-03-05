@@ -41,6 +41,7 @@ Removes only:
 
 - macOS
 - Ubuntu
+- Ubuntu on Lima (macOS)
 - Ubuntu on WSL2
 - Raspberry Pi OS
 - Chrome OS (Linux container / Crostini)
@@ -63,6 +64,9 @@ Both are scoped to the directory where you run `loglm`.
 If the selected agent command is missing (`codex`, `claude`, or `gemini`),
 `loglm` prompts and runs an installer from `~/.local/share/loglm/setup`.
 Before agent install, `doctor.sh` checks required tools (such as `script`, Node.js, and npm).
+On macOS, setup prefers Homebrew for agent installation when a brew package is available;
+otherwise it falls back to npm.
+If Homebrew is missing on macOS, setup can install Homebrew interactively.
 
 Setup dialogue language:
 
