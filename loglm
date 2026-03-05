@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+WORK_DIR="$(pwd -P)"
+LOG_DIR="$WORK_DIR/logs"
+AGENT_FILE="$WORK_DIR/.loglm_agent"
+TODAY_LOCAL="$(date +%Y%m%d)"
+
+SUPPORTED_AGENTS=(codex claude gemini)
+
+usage() {
+  cat <<'EOF'
+Usage: loglm [options]
+
+Options:
+  --new
+      Start a new context (ignore saved session).
+  --resume
+      Open the agent's built-in session picker.
+  --agent
+      Re-select the AI coding agent (codex / claude / gemini).
+  -X, --dangerous
+      Start the agent in dangerous/no-approval mode:
+        codex  : --dangerously-bypass-approvals-and-sandbox
+        claude : --dangerously-skip-permissions
+        gemini : --yolo
+  -h, --help
+      Show this help.
+EOF
+}
+
+claude_has_history() {
+  local encoded="${WORK_DIR//\//-}"
+  compgen -G "$HOME/.claude/projects/$encoded/*.jsonl" > /dev/null 2>&1
+}
+
+is_running_under_script() {
+  local pid ppid comm
+  pid="$$"
+
+  while :; do
+    ppid="$(ps -o ppid= -p "$pid" | tr -d '[:space:]')"
+    if [[ -z "$ppid" || "$ppid" == "0" ]]; then
+      return 1
+    fi
+
+    comm="$(ps -o comm= -p "$ppid" | awk '{print $1}')"
+    if [[ "$comm" == "script" ]]; then
+      return 0
+    fi
+
+    pid="$ppid"
+  done
+}
+
+select_agent() {
+  echo "Select AI coding agent:"
+  local i=1
+  for agent in "${SUPPORTED_AGENTS[@]}"; do
+    printf "  %d) %s\n" "$i" "$agent"
+    ((i++))
+  done
+  local choice
+  while :; do
+    printf "Enter number [1-%d]: " "${#SUPPORTED_AGENTS[@]}"
+    read -r choice
+    if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#SUPPORTED_AGENTS[@]} )); then
+      AGENT="${SUPPORTED_AGENTS[$((choice - 1))]}"
+      printf '%s\n' "$AGENT" > "$AGENT_FILE"
+      echo "Selected: $AGENT"
+      return
+    fi
+    echo "Invalid choice. Please enter a number between 1 and ${#SUPPORTED_AGENTS[@]}."
+  done
+}
+
+mkdir -p "$LOG_DIR"
+
+FORCE_NEW=0
+CHOOSE_RESUME=0
+DANGEROUS_MODE=0
+CHOOSE_AGENT=0
+
+while (($# > 0)); do
+  case "$1" in
+    --new)
+      FORCE_NEW=1
+      shift
+      ;;
+    --resume)
+      CHOOSE_RESUME=1
+      shift
+      ;;
+    --agent)
+      CHOOSE_AGENT=1
+      shift
+      ;;
+    -X|--dangerous)
+      DANGEROUS_MODE=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Error: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ "$FORCE_NEW" -eq 1 && "$CHOOSE_RESUME" -eq 1 ]]; then
+  echo "Error: --new and --resume cannot be used together." >&2
+  exit 2
+fi
+
+if [[ "$CHOOSE_AGENT" -eq 1 || ! -f "$AGENT_FILE" ]]; then
+  select_agent
+else
+  AGENT="$(cat "$AGENT_FILE")"
+  valid=0
+  for a in "${SUPPORTED_AGENTS[@]}"; do
+    [[ "$a" == "$AGENT" ]] && valid=1 && break
+  done
+  if [[ "$valid" -eq 0 ]]; then
+    echo "Warning: unknown agent '$AGENT' stored in $AGENT_FILE. Re-selecting." >&2
+    select_agent
+  fi
+fi
+
+LOG_FILE="$LOG_DIR/loglm-${AGENT}-log-${TODAY_LOCAL}.txt"
+
+case "$AGENT" in
+  codex)
+    BASE_CMD=(codex)
+    if [[ "$DANGEROUS_MODE" -eq 1 ]]; then
+      BASE_CMD+=(--dangerously-bypass-approvals-and-sandbox)
+    fi
+    if [[ "$FORCE_NEW" -eq 1 ]]; then
+      AGENT_CMD=("${BASE_CMD[@]}" --search)
+    elif [[ "$CHOOSE_RESUME" -eq 1 ]]; then
+      AGENT_CMD=("${BASE_CMD[@]}" resume)
+    else
+      AGENT_CMD=("${BASE_CMD[@]}" resume --last)
+    fi
+    ;;
+
+  claude)
+    BASE_CMD=(claude)
+    if [[ "$DANGEROUS_MODE" -eq 1 ]]; then
+      BASE_CMD+=(--dangerously-skip-permissions)
+    fi
+    if [[ "$FORCE_NEW" -eq 1 ]]; then
+      AGENT_CMD=("${BASE_CMD[@]}")
+    elif [[ "$CHOOSE_RESUME" -eq 1 ]]; then
+      AGENT_CMD=("${BASE_CMD[@]}" --resume)
+    elif claude_has_history; then
+      AGENT_CMD=("${BASE_CMD[@]}" --continue)
+    else
+      AGENT_CMD=("${BASE_CMD[@]}")
+    fi
+    ;;
+
+  gemini)
+    BASE_CMD=(gemini)
+    if [[ "$DANGEROUS_MODE" -eq 1 ]]; then
+      BASE_CMD+=(--yolo)
+    fi
+    if [[ "$CHOOSE_RESUME" -eq 1 ]]; then
+      echo "Note: Gemini does not support interactive session picking; starting normally." >&2
+    fi
+    AGENT_CMD=("${BASE_CMD[@]}")
+    ;;
+esac
+
+if is_running_under_script; then
+  exec "${AGENT_CMD[@]}"
+fi
+
+RUN_START_LOCAL="$(date '+%Y-%m-%d %H:%M:%S %z')"
+{
+  printf '\n===== loglm start [%s]: %s =====\n' "$AGENT" "$RUN_START_LOCAL"
+} >> "$LOG_FILE"
+
+SCRIPT_OPTS=(-q -a)
+SCRIPT_HELP="$(script -h 2>&1 || true)"
+
+if printf '%s' "$SCRIPT_HELP" | grep -Eq -- '(^|[[:space:]])-F([,[:space:]]|$)'; then
+  SCRIPT_OPTS+=(-F)
+elif printf '%s' "$SCRIPT_HELP" | grep -Eq -- '(^|[[:space:]])-f([,[:space:]]|$)'; then
+  SCRIPT_OPTS+=(-f)
+fi
+
+if printf '%s' "$SCRIPT_HELP" | grep -Eq -- '(^|[[:space:]])-c,|--command([[:space:]]|=)'; then
+  AGENT_CMD_STRING="$(printf '%q ' "${AGENT_CMD[@]}")"
+  AGENT_CMD_STRING="${AGENT_CMD_STRING% }"
+  exec script "${SCRIPT_OPTS[@]}" "$LOG_FILE" -c "exec $AGENT_CMD_STRING"
+else
+  exec script "${SCRIPT_OPTS[@]}" "$LOG_FILE" "${AGENT_CMD[@]}"
+fi
