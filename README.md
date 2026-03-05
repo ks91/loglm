@@ -18,6 +18,7 @@ It also installs:
 
 - `loglm-decode` into `~/.local/bin`
 - setup scripts into `~/.local/share/loglm/setup`
+
 If the install bin directory is not in `PATH`, `install.sh` appends it to your shell profile automatically.
 
 ## Uninstall
