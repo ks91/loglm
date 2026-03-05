@@ -71,6 +71,11 @@ otherwise it falls back to npm.
 If Homebrew is missing on macOS, setup can install Homebrew interactively.
 When npm fallback is used and npm is missing, setup can install Node.js / npm interactively.
 
+Claude Code (all supported platforms):
+
+- Native installation is recommended.
+- If you installed via Homebrew or npm first, run `claude install` to switch to native installation.
+
 Setup dialogue language:
 
 - auto: from locale (`LC_ALL` > `LC_MESSAGES` > `LANG`; `ja*` => Japanese, otherwise English)
