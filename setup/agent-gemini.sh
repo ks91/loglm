@@ -10,6 +10,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 resolve_lang
 PLATFORM="$(detect_platform)"
+
+ensure_npm_for_fallback() {
+  if command -v npm > /dev/null 2>&1; then
+    return 0
+  fi
+  if ! prompt_yes_no \
+    "npm が見つかりません。Node.js / npm を今インストールしますか？" \
+    "npm was not found. Install Node.js / npm now?"; then
+    return 1
+  fi
+  "$SCRIPT_DIR/install-node.sh"
+}
 if [[ "$PLATFORM" == "macos" ]]; then
   if ensure_homebrew; then
     if brew_install_candidates "Gemini CLI" gemini-cli google-gemini-cli; then
@@ -33,7 +45,7 @@ if [[ "$PLATFORM" == "macos" ]]; then
   fi
 fi
 
-if ! command -v npm > /dev/null 2>&1; then
+if ! ensure_npm_for_fallback; then
   say "エラー: Gemini CLI のインストールには npm が必要です。" \
       "Error: npm is required to install Gemini CLI." >&2
   say "Node.js + npm を入れてから loglm を再実行してください。" \

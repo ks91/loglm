@@ -22,19 +22,8 @@ if ! command -v script > /dev/null 2>&1; then
   exit 1
 fi
 
-if command -v node > /dev/null 2>&1 && command -v npm > /dev/null 2>&1; then
-  say "Node.js / npm は利用可能です。" "Node.js / npm is available."
-else
-  if prompt_yes_no \
-    "Node.js / npm が見つかりません。今インストールしますか？" \
-    "Node.js / npm was not found. Install now?"; then
-    "$SCRIPT_DIR/install-node.sh"
-  else
-    say "Node.js / npm が必要です。セットアップを中止しました。" \
-        "Node.js / npm is required. Setup was cancelled."
-    exit 1
-  fi
-fi
+say "基本チェック: script コマンド OK" \
+    "Base check: script command OK"
 
 if [[ "$AGENT" == "claude" ]]; then
   say "注意: Claude Code は環境によってネイティブインストール推奨の場合があります。" \
