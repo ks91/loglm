@@ -10,18 +10,65 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 resolve_lang
 PLATFORM="$(detect_platform)"
+NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
-install_node_with_apt() {
-  if ! command -v apt-get > /dev/null 2>&1; then
-    say "この環境では apt-get が見つかりません。Node.js を手動でインストールしてください。" \
-        "apt-get was not found on this system. Please install Node.js manually."
+ensure_nvm_profile_init() {
+  local profile
+  local line1='export NVM_DIR="$HOME/.nvm"'
+  local line2='[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"'
+
+  profile="$(detect_profile_file)"
+  mkdir -p "$(dirname "$profile")"
+  touch "$profile"
+
+  if ! grep -Fqx "$line1" "$profile"; then
+    {
+      printf '\n# Added by loglm setup (nvm)\n'
+      printf '%s\n' "$line1"
+    } >> "$profile"
+  fi
+  if ! grep -Fqx "$line2" "$profile"; then
+    printf '%s\n' "$line2" >> "$profile"
+  fi
+}
+
+source_nvm() {
+  if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+    # shellcheck disable=SC1090
+    . "$NVM_DIR/nvm.sh"
+    return 0
+  fi
+  return 1
+}
+
+ensure_nvm_installed() {
+  if source_nvm; then
+    return 0
+  fi
+
+  if ! command -v curl > /dev/null 2>&1; then
+    say "nvm のインストールには curl が必要です。" \
+        "curl is required to install nvm."
     return 1
   fi
 
-  say "apt-get で Node.js と npm をインストールします。" \
-      "Installing Node.js and npm using apt-get."
-  run_as_root apt-get update
-  run_as_root apt-get install -y nodejs npm
+  say "nvm をインストールします..." \
+      "Installing nvm..."
+  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  ensure_nvm_profile_init
+  source_nvm
+}
+
+install_node_with_nvm_lts() {
+  if ! ensure_nvm_installed; then
+    return 1
+  fi
+
+  say "nvm で最新LTSの Node.js をインストールします..." \
+      "Installing latest LTS Node.js with nvm..."
+  nvm install --lts
+  nvm alias default 'lts/*'
+  nvm use default
 }
 
 install_homebrew() {
@@ -63,7 +110,7 @@ case "$PLATFORM" in
     brew install node
     ;;
   ubuntu|wsl2|raspberrypi|chromeos|linux)
-    install_node_with_apt
+    install_node_with_nvm_lts
     ;;
   *)
     say "未対応の OS です。Node.js を手動でインストールしてください。" \
