@@ -47,6 +47,8 @@ decode_one() {
     base="$(basename "$in_file" | tr '[:upper:]' '[:lower:]')"
     if [[ "$base" == *claude* ]]; then
       profile="claude"
+    elif [[ "$base" == *gemini* ]]; then
+      profile="gemini"
     else
       profile="default"
     fi
@@ -55,6 +57,7 @@ decode_one() {
   LOGLM_DECODE_PROFILE="$profile" perl -e '
 use strict;
 use warnings;
+use Encode qw(decode encode FB_DEFAULT);
 
 binmode(STDIN);
 binmode(STDOUT);
@@ -74,6 +77,7 @@ my $pending_cr = 0;
 my $csi_param = q{};
 my $profile = $ENV{LOGLM_DECODE_PROFILE} // q{};
 my $is_claude = ($profile eq "claude") ? 1 : 0;
+my $is_gemini = ($profile eq "gemini") ? 1 : 0;
 
 while (read(STDIN, $c, 1)) {
   my $b = ord($c);
@@ -192,7 +196,8 @@ if ($pending_cr) {
 $out =~ s/[ \t]+\n/\n/g;
 $out =~ s/[ \t]+\z//;
 
-my @lines = split /\n/, $out, -1;
+my $text = decode("UTF-8", $out, FB_DEFAULT);
+my @lines = split /\n/, $text, -1;
 my @merged = ();
 if ($is_claude) {
   # Merge "staircase" input echoes common in Claude TUI redraws.
@@ -244,6 +249,101 @@ if ($is_claude) {
       $i++;
     }
   }
+} elsif ($is_gemini) {
+  my @normalized = ();
+  my $pending_prompt;
+  my $last_emitted_prompt;
+
+  for my $raw (@lines) {
+    my $line = $raw;
+
+    # Drop box borders produced by Gemini TUI redraws.
+    next if $line =~ /^\s*[\p{Block=Box_Drawing}]+\s*$/u;
+
+    # Unwrap boxed lines: "│ ... │" -> "..."
+    if ($line =~ /^\s*\p{Block=Box_Drawing}(.*)\p{Block=Box_Drawing}\s*$/u) {
+      $line = $1;
+      $line =~ s/^\s+//;
+      $line =~ s/\s+$//;
+    } else {
+      $line =~ s/\s+$//;
+    }
+
+    # Drop frequent transient UI lines.
+    if (
+      $line eq q{} ||
+      $line =~ /Waiting for auth/i ||
+      $line =~ /Gemini CLI update available!/ ||
+      $line =~ /Installed via Homebrew\./ ||
+      $line =~ /^loglm-gemini$/ ||
+      $line =~ /^no sandbox \(see \/docs\)$/ ||
+      $line =~ /no sandbox \(see \/docs\)/ ||
+      $line =~ /^gemini-[[:alnum:]._-]+ \(\d+% context left\)$/ ||
+      $line =~ /^[\x{2800}-\x{28FF}]\s+/u ||
+      $line =~ /^\S.*\(esc to cancel,\s*\d+s\)$/ ||
+      $line =~ /^>\s*Type your message or \@path\/to\/file$/
+    ) {
+      next;
+    }
+
+    # Merge staircase-style prompt redraws into one line.
+    if ($line =~ /^>\s*(.*)$/) {
+      my $p = $1;
+      $p =~ s/^\s+//;
+      $p =~ s/\s+$//;
+      if (!defined $pending_prompt) {
+        $pending_prompt = $p;
+        next;
+      }
+      if ($p =~ /^\Q$pending_prompt\E/ || $pending_prompt =~ /^\Q$p\E/) {
+        # Continue tracking while user edits (both extension and backspace).
+        $pending_prompt = $p;
+        next;
+      }
+      if (
+        $pending_prompt ne q{} &&
+        (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
+        (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
+      ) {
+        push @normalized, "> $pending_prompt";
+        $last_emitted_prompt = $pending_prompt;
+      }
+      $pending_prompt = $p;
+      next;
+    }
+
+    if (defined $pending_prompt) {
+      if ($line eq $pending_prompt) {
+        next;
+      }
+      if (
+        $pending_prompt ne q{} &&
+        (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
+        (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
+      ) {
+        push @normalized, "> $pending_prompt";
+        $last_emitted_prompt = $pending_prompt;
+      }
+      undef $pending_prompt;
+    }
+    if (defined $last_emitted_prompt && $line eq $last_emitted_prompt) {
+      next;
+    }
+
+    push @normalized, $line;
+  }
+
+  if (defined $pending_prompt) {
+    if (
+      $pending_prompt ne q{} &&
+      (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
+      (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
+    ) {
+      push @normalized, "> $pending_prompt";
+    }
+  }
+
+  @merged = @normalized;
 } else {
   @merged = @lines;
 }
@@ -313,6 +413,13 @@ for my $line (@merged) {
       $cmp = "(status)";
       $line_out = "(status)";
     }
+  } elsif ($is_gemini) {
+    $cmp =~ s/^\s+//;
+    $cmp =~ s/\s+$//;
+    # Startup banner art is mostly decorative and very noisy.
+    if ($cmp =~ /^[[:space:]\p{Block=Block_Elements}]+$/u) {
+      next;
+    }
   }
 
   if (
@@ -332,18 +439,7 @@ $out = join("\n", @dedup);
 # Collapse 3+ consecutive newlines to 2 (at most one blank line).
 $out =~ s/\n{3,}/\n\n/g;
 
-# Keep only well-formed UTF-8 byte sequences.
-my @valid = ($out =~ /(
-    [\x00-\x7F]
-  | [\xC2-\xDF][\x80-\xBF]
-  | \xE0[\xA0-\xBF][\x80-\xBF]
-  | [\xE1-\xEC\xEE-\xEF][\x80-\xBF]{2}
-  | \xED[\x80-\x9F][\x80-\xBF]
-  | \xF0[\x90-\xBF][\x80-\xBF]{2}
-  | [\xF1-\xF3][\x80-\xBF]{3}
-  | \xF4[\x80-\x8F][\x80-\xBF]{2}
-)/xg);
-print STDOUT join(q{}, @valid);
+print STDOUT encode("UTF-8", $out);
 ' < "$in_file" > "$tmp_file"
 
   mv "$tmp_file" "$out_file"
