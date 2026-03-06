@@ -98,9 +98,9 @@ install_node_with_nvm_lts() {
 
   say "nvm で最新LTSの Node.js をインストールします..." \
       "Installing latest LTS Node.js with nvm..."
-  nvm install --delete-prefix --lts
+  nvm install --lts
   nvm alias default 'lts/*'
-  nvm use --delete-prefix default
+  nvm use default --delete-prefix
 }
 
 install_homebrew() {
