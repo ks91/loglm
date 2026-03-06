@@ -15,7 +15,12 @@ SUPPORTED_AGENTS=(codex claude gemini)
 
 usage() {
   cat <<'EOF'
-Usage: loglm [options]
+Usage:
+  loglm [options]
+  loglm agent install <github_repo_or_url> [--agent codex|claude|gemini|all]
+  loglm agent list [--agent codex|claude|gemini|all]
+  loglm agent remove <github_repo_or_url> [--agent codex|claude|gemini|all]
+  loglm agent update <github_repo_or_url|--all> [--agent codex|claude|gemini|all]
 
 Options:
   --new
@@ -34,6 +39,10 @@ Options:
         gemini : --yolo
   -h, --help
       Show this help.
+
+Subcommands:
+  agent ...
+      Manage prompt-agent blocks in AGENTS.md / CLAUDE.md / GEMINI.md.
 EOF
 }
 
@@ -89,6 +98,30 @@ is_running_under_script() {
   done
 }
 
+run_agent_subcommand() {
+  local subcmd="$1"
+  shift
+  if ! resolve_setup_dir; then
+    echo "Error: setup scripts not found." >&2
+    echo "Expected '$SCRIPT_DIR/setup' or '$LOGLM_HOME/setup'." >&2
+    echo "Reinstall loglm and try again." >&2
+    exit 1
+  fi
+  case "$subcmd" in
+    install)
+      exec "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
+      ;;
+    list|remove|update)
+      exec "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
+      ;;
+    *)
+      echo "Error: unknown agent subcommand: $subcmd" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+}
+
 select_agent() {
   echo "Select AI coding agent:"
   local i=1
@@ -110,7 +143,14 @@ select_agent() {
   done
 }
 
-mkdir -p "$LOG_DIR"
+if (($# > 0)) && [[ "$1" == "agent" ]]; then
+  shift
+  if (($# == 0)); then
+    usage >&2
+    exit 2
+  fi
+  run_agent_subcommand "$@"
+fi
 
 FORCE_NEW=0
 CHOOSE_RESUME=0
@@ -151,6 +191,8 @@ while (($# > 0)); do
       ;;
   esac
 done
+
+mkdir -p "$LOG_DIR"
 
 if [[ "$FORCE_NEW" -eq 1 && "$CHOOSE_RESUME" -eq 1 ]]; then
   echo "Error: --new and --resume cannot be used together." >&2

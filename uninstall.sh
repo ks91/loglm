@@ -14,6 +14,7 @@ TARGETS=(
   "$SETUP_DIR/install-node.sh"
   "$SETUP_DIR/doctor.sh"
   "$SETUP_DIR/ensure-agent.sh"
+  "$SETUP_DIR/agent-install.sh"
   "$SETUP_DIR/agent-codex.sh"
   "$SETUP_DIR/agent-claude.sh"
   "$SETUP_DIR/agent-gemini.sh"

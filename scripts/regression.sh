@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOG_FILE="${TMPDIR:-/tmp}/loglm-regression-$(date +%Y%m%d-%H%M%S).log"
+RUN_E2E=0
+E2E_REPO="${E2E_REPO:-ks91/gamer-pat}"
+E2E_AGENT="${E2E_AGENT:-codex}"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  bash scripts/regression.sh [--e2e] [--repo <owner/repo>] [--agent codex|claude|gemini|all]
+
+Options:
+  --e2e                Run network E2E checks (install/list/update/remove).
+  --repo <owner/repo>  Repository used in E2E checks (default: ks91/gamer-pat).
+  --agent <name>       Agent scope for E2E checks (default: codex).
+  -h, --help           Show this help.
+EOF
+}
+
+pass() {
+  printf 'PASS: %s\n' "$*" | tee -a "$LOG_FILE"
+}
+
+fail() {
+  printf 'FAIL: %s\n' "$*" | tee -a "$LOG_FILE" >&2
+  exit 1
+}
+
+run_cmd() {
+  "$@" >> "$LOG_FILE" 2>&1
+}
+
+assert_exit_code() {
+  local expected="$1"
+  local actual="$2"
+  local label="$3"
+  [[ "$actual" -eq "$expected" ]] || fail "$label (expected exit $expected, got $actual)"
+}
+
+while (($# > 0)); do
+  case "$1" in
+    --e2e)
+      RUN_E2E=1
+      shift
+      ;;
+    --repo)
+      if (($# < 2)); then
+        echo "missing value for --repo" >&2
+        exit 2
+      fi
+      E2E_REPO="$2"
+      shift 2
+      ;;
+    --agent)
+      if (($# < 2)); then
+        echo "missing value for --agent" >&2
+        exit 2
+      fi
+      E2E_AGENT="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "$E2E_AGENT" in
+  codex|claude|gemini|all) ;;
+  *)
+    echo "invalid --agent: $E2E_AGENT" >&2
+    exit 2
+    ;;
+esac
+
+printf 'loglm regression start: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" | tee -a "$LOG_FILE"
+
+# 1) Syntax checks
+run_cmd bash -n \
+  "$ROOT_DIR/loglm" \
+  "$ROOT_DIR/install.sh" \
+  "$ROOT_DIR/uninstall.sh" \
+  "$ROOT_DIR/setup/install-node.sh" \
+  "$ROOT_DIR/setup/agent-install.sh"
+pass "shell syntax checks"
+
+# 2) Help output
+run_cmd "$ROOT_DIR/loglm" --help
+run_cmd "$ROOT_DIR/loglm" agent install --help
+pass "help output"
+
+# 3) Existing option conflict behavior
+set +e
+"$ROOT_DIR/loglm" --new --resume > /tmp/loglm-test-conflict.out 2> /tmp/loglm-test-conflict.err
+st=$?
+set -e
+assert_exit_code 2 "$st" "--new/--resume conflict"
+rg -q "cannot be used together" /tmp/loglm-test-conflict.err || fail "missing conflict message"
+pass "option conflict check"
+
+# 4) Invalid repo validation
+set +e
+"$ROOT_DIR/loglm" agent install not-a-repo > /tmp/loglm-test-invalid.out 2> /tmp/loglm-test-invalid.err
+st=$?
+set -e
+assert_exit_code 2 "$st" "invalid repo validation"
+rg -q "Invalid repository spec" /tmp/loglm-test-invalid.err || fail "missing invalid repo message"
+pass "invalid repo check"
+
+# 5) Managed block list/remove behavior
+TMP_WORK="$(/usr/bin/mktemp -d)"
+trap 'rm -rf "$TMP_WORK"' EXIT
+cd "$TMP_WORK"
+
+cat > AGENTS.md <<'EOF'
+# Existing content
+
+<!-- loglm:begin platform -->
+# loglm Platform Notes (managed)
+- Runtime: test
+<!-- loglm:end platform -->
+
+<!-- loglm:begin repo=ks91/gamer-pat agent=codex source=AGENTS.md -->
+repo block body
+<!-- loglm:end repo=ks91/gamer-pat agent=codex -->
+EOF
+
+run_cmd "$ROOT_DIR/loglm" agent list
+"$ROOT_DIR/loglm" agent list > /tmp/loglm-test-list1.out 2>/tmp/loglm-test-list1.err
+rg -q "repo=ks91/gamer-pat agent=codex source=AGENTS.md" /tmp/loglm-test-list1.out || fail "agent list should show installed block"
+pass "agent list shows managed repo block"
+
+run_cmd "$ROOT_DIR/loglm" agent remove ks91/gamer-pat --agent codex
+! rg -q "repo=ks91/gamer-pat" AGENTS.md || fail "repo block should be removed"
+rg -q "loglm:begin platform" AGENTS.md || fail "platform block should remain"
+rg -q "Existing content" AGENTS.md || fail "existing content should remain"
+pass "agent remove removes only target block"
+
+"$ROOT_DIR/loglm" agent list > /tmp/loglm-test-list2.out 2>/tmp/loglm-test-list2.err
+rg -q "No installed prompt agents found" /tmp/loglm-test-list2.out || fail "agent list should be empty after remove"
+pass "agent list empty after remove"
+
+# 6) Update validation
+set +e
+"$ROOT_DIR/loglm" agent update > /tmp/loglm-test-update-empty.out 2> /tmp/loglm-test-update-empty.err
+st=$?
+set -e
+assert_exit_code 2 "$st" "agent update with no args"
+rg -q "requires a repository or --all" /tmp/loglm-test-update-empty.err || fail "missing update validation message"
+pass "agent update validation"
+
+run_cmd "$ROOT_DIR/loglm" agent update --all
+pass "agent update --all on empty set"
+
+if [[ "$RUN_E2E" -eq 1 ]]; then
+  # 7) Network E2E: install/list/update/remove cycle against real GitHub repo
+  E2E_DIR="$(/usr/bin/mktemp -d)"
+  trap 'rm -rf "$TMP_WORK" "$E2E_DIR"' EXIT
+  cd "$E2E_DIR"
+
+  run_cmd "$ROOT_DIR/loglm" agent install "$E2E_REPO" --agent "$E2E_AGENT"
+  pass "e2e install ($E2E_REPO, agent=$E2E_AGENT)"
+
+  "$ROOT_DIR/loglm" agent list --agent "$E2E_AGENT" > /tmp/loglm-test-e2e-list1.out 2>/tmp/loglm-test-e2e-list1.err
+  rg -q "repo=$E2E_REPO" /tmp/loglm-test-e2e-list1.out || fail "e2e list should include installed repo"
+  pass "e2e list after install"
+
+  run_cmd "$ROOT_DIR/loglm" agent update "$E2E_REPO" --agent "$E2E_AGENT"
+  pass "e2e update ($E2E_REPO)"
+
+  run_cmd "$ROOT_DIR/loglm" agent remove "$E2E_REPO" --agent "$E2E_AGENT"
+  pass "e2e remove ($E2E_REPO)"
+
+  "$ROOT_DIR/loglm" agent list --agent "$E2E_AGENT" > /tmp/loglm-test-e2e-list2.out 2>/tmp/loglm-test-e2e-list2.err
+  ! rg -q "repo=$E2E_REPO" /tmp/loglm-test-e2e-list2.out || fail "e2e list should not include removed repo"
+  pass "e2e list after remove"
+fi
+
+printf 'loglm regression passed\n' | tee -a "$LOG_FILE"
+printf 'log: %s\n' "$LOG_FILE"

@@ -105,6 +105,44 @@ LOGLM_LANG=both loglm
   - `gemini`: `--yolo`
 - `-h`, `--help`: Show help.
 
+## Agent Prompt Install
+
+Manage prompt-agent blocks in the current directory:
+
+```bash
+loglm agent install ks91/gamer-pat
+loglm agent list
+loglm agent remove ks91/gamer-pat
+loglm agent update --all
+```
+
+Supported repository spec:
+
+- `owner/repo`
+- `https://github.com/owner/repo`
+
+Supported options:
+
+- `--agent codex|claude|gemini|all` (default: `all`)
+
+File mapping:
+
+- codex -> `AGENTS.md`
+- claude -> `CLAUDE.md` (fallback: `AGENTS.md`)
+- gemini -> `GEMINI.md` (fallback: `AGENTS.md`)
+
+Behavior:
+
+- `install` appends/updates loglm managed blocks instead of replacing whole files.
+- Multiple repositories can be installed into the same file.
+- A platform block is maintained automatically (macOS / WSL2 / Ubuntu on Lima / etc.).
+- `remove` deletes only the matching repo block(s), leaving other content intact.
+- `update` refreshes installed repo block(s) from GitHub (`repo` or `--all`).
+
+Developer guide for prompt-agent authors:
+
+- See [`PROMPT_AGENT_GUIDELINES.md`](./PROMPT_AGENT_GUIDELINES.md)
+
 ## Decode Logs
 
 Decode raw `script` logs before reading:
@@ -117,11 +155,26 @@ This writes:
 
 - `logs/loglm-codex-log-20260305.decoded.txt`
 
+## Regression Test
+
+Run local regression checks (no network required):
+
+```bash
+bash scripts/regression.sh
+```
+
+Run E2E checks against a real GitHub repository:
+
+```bash
+bash scripts/regression.sh --e2e --repo ks91/gamer-pat --agent codex
+```
+
 ## Install Layout
 
 - `~/.local/bin/loglm`
 - `~/.local/bin/loglm-decode`
 - `~/.local/share/loglm/setup/ensure-agent.sh`
+- `~/.local/share/loglm/setup/agent-install.sh`
 - `~/.local/share/loglm/setup/doctor.sh`
 - `~/.local/share/loglm/setup/install-node.sh`
 - `~/.local/share/loglm/setup/platform-detect.sh`
