@@ -411,7 +411,10 @@ install_one_repo_for_agent() {
   rtmp="$(new_tmp_file)"
   {
     printf '<!-- source: https://github.com/%s/blob/HEAD/%s -->\n' "$repo" "$source"
-    printf 'Follow `%s` for this prompt-agent.\n' "$prompt_file"
+    printf 'For repo `%s`, you MUST read `%s` before responding.\n' "$repo" "$prompt_file"
+    printf 'You MUST follow `%s` as the primary project instruction set (after system/developer safety rules).\n' "$prompt_file"
+    printf 'When the user asks to begin/start the workflow, begin in this prompt-agent mode immediately.\n'
+    printf 'If `%s` cannot be read, report it clearly and ask for recovery.\n' "$prompt_file"
   } > "$rtmp"
 
   b2="$(block_begin_repo "$repo" "$agent" "$source")"

@@ -138,6 +138,8 @@ Behavior:
   (example: `ks91/gamer-pat` -> `GAMER-PAT.md`).
 - `install` appends/updates managed reference blocks in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`
   that point to `<REPO-NAME-UPPER>.md`, instead of replacing whole files.
+- Managed reference blocks include strong instructions (`MUST read`, `MUST follow`) for consistency
+  across codex / claude / gemini.
 - Multiple repositories can be installed into the same file.
 - A platform block is maintained automatically (macOS / WSL2 / Ubuntu on Lima / etc.).
 - `remove` deletes only the matching repo block(s), leaving other content intact.
