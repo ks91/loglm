@@ -146,6 +146,8 @@ Behavior:
 - `remove` also deletes `<REPO-NAME-UPPER>.md` when no agent file references that repo anymore.
 - `update` refreshes installed repo block(s) from GitHub (`repo` or `--all`).
 - After `loglm agent install ...` completes, `loglm` starts the current coding agent in a new context.
+- After auto-launch, send a short kickoff cue to begin the installed prompt-agent workflow
+  (for example: `Let's begin.` or `はじめよう。`).
   - Set `LOGLM_AGENT_INSTALL_NO_LAUNCH=1` to disable auto-launch (used by tests).
 
 Developer guide for prompt-agent authors:
