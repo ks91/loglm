@@ -87,13 +87,16 @@ target_file_for_agent() {
 source_candidates_for_agent() {
   case "$1" in
     codex)
+      printf '%s\n' "AGENT_INSTALL.md"
       printf '%s\n' "AGENTS.md"
       ;;
     claude)
+      printf '%s\n' "AGENT_INSTALL.md"
       printf '%s\n' "CLAUDE.md"
       printf '%s\n' "AGENTS.md"
       ;;
     gemini)
+      printf '%s\n' "AGENT_INSTALL.md"
       printf '%s\n' "GEMINI.md"
       printf '%s\n' "AGENTS.md"
       ;;
@@ -101,6 +104,52 @@ source_candidates_for_agent() {
       return 1
       ;;
   esac
+}
+
+repo_prompt_filename() {
+  local repo="$1"
+  local base sanitized
+  base="${repo##*/}"
+  sanitized="$(printf '%s' "$base" | tr '[:lower:]' '[:upper:]' | sed -E 's/[^A-Z0-9]+/-/g; s/^-+//; s/-+$//')"
+  if [[ -z "$sanitized" ]]; then
+    sanitized="PROMPT-AGENT"
+  fi
+  printf '%s.md\n' "$sanitized"
+}
+
+write_repo_prompt_file() {
+  local repo="$1"
+  local source="$2"
+  local src_file="$3"
+  local out
+
+  out="$(repo_prompt_filename "$repo")"
+  {
+    printf '<!-- source: https://github.com/%s/blob/HEAD/%s -->\n' "$repo" "$source"
+    cat "$src_file"
+  } > "$out"
+}
+
+repo_is_referenced_anywhere() {
+  local repo="$1"
+  local file
+  for file in AGENTS.md CLAUDE.md GEMINI.md; do
+    [[ -f "$file" ]] || continue
+    if grep -q "repo=$repo " "$file"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+remove_repo_prompt_file_if_unreferenced() {
+  local repo="$1"
+  local prompt_file
+  prompt_file="$(repo_prompt_filename "$repo")"
+  if repo_is_referenced_anywhere "$repo"; then
+    return 0
+  fi
+  rm -f "$prompt_file"
 }
 
 runtime_context() {
@@ -319,6 +368,7 @@ install_one_repo_for_agent() {
   local target tmp
   local ptmp rtmp
   local pctx pbody b1 e1 b2 e2
+  local prompt_file
 
   base_url="https://raw.githubusercontent.com/$repo/HEAD"
   source=""
@@ -339,6 +389,9 @@ install_one_repo_for_agent() {
     return 1
   fi
 
+  write_repo_prompt_file "$repo" "$source" "$tmp"
+  prompt_file="$(repo_prompt_filename "$repo")"
+
   target="$(target_file_for_agent "$agent")"
   if ! ensure_user_consents_to_modify "$target" "$force"; then
     rm -f "$tmp"
@@ -358,7 +411,7 @@ install_one_repo_for_agent() {
   rtmp="$(new_tmp_file)"
   {
     printf '<!-- source: https://github.com/%s/blob/HEAD/%s -->\n' "$repo" "$source"
-    cat "$tmp"
+    printf 'Follow `%s` for this prompt-agent.\n' "$prompt_file"
   } > "$rtmp"
 
   b2="$(block_begin_repo "$repo" "$agent" "$source")"
@@ -367,8 +420,8 @@ install_one_repo_for_agent() {
 
   rm -f "$ptmp" "$rtmp"
   rm -f "$tmp"
-  say "[$agent] インストール完了: $target (repo: $repo, source: $source)" \
-      "[$agent] Installed: $target (repo: $repo, source: $source)"
+  say "[$agent] インストール完了: $target (repo: $repo, source: $source, prompt: $prompt_file)" \
+      "[$agent] Installed: $target (repo: $repo, source: $source, prompt: $prompt_file)"
   return 0
 }
 
@@ -561,6 +614,7 @@ case "$SUBCMD" in
       say "[$agent] 削除処理完了: $TARGET_REPO" \
           "[$agent] Remove completed: $TARGET_REPO"
     done
+    remove_repo_prompt_file_if_unreferenced "$TARGET_REPO"
     ;;
 
   update)

@@ -130,14 +130,21 @@ File mapping:
 - codex -> `AGENTS.md`
 - claude -> `CLAUDE.md` (fallback: `AGENTS.md`)
 - gemini -> `GEMINI.md` (fallback: `AGENTS.md`)
+- all agents -> fallback: `AGENT_INSTALL.md` (recommended)
 
 Behavior:
 
-- `install` appends/updates loglm managed blocks instead of replacing whole files.
+- `install` downloads prompt content into `<REPO-NAME-UPPER>.md` in the current directory
+  (example: `ks91/gamer-pat` -> `GAMER-PAT.md`).
+- `install` appends/updates managed reference blocks in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`
+  that point to `<REPO-NAME-UPPER>.md`, instead of replacing whole files.
 - Multiple repositories can be installed into the same file.
 - A platform block is maintained automatically (macOS / WSL2 / Ubuntu on Lima / etc.).
 - `remove` deletes only the matching repo block(s), leaving other content intact.
+- `remove` also deletes `<REPO-NAME-UPPER>.md` when no agent file references that repo anymore.
 - `update` refreshes installed repo block(s) from GitHub (`repo` or `--all`).
+- After `loglm agent install ...` completes, `loglm` starts the current coding agent in a new context.
+  - Set `LOGLM_AGENT_INSTALL_NO_LAUNCH=1` to disable auto-launch (used by tests).
 
 Developer guide for prompt-agent authors:
 

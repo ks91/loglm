@@ -110,7 +110,7 @@ pass "option conflict check"
 
 # 4) Invalid repo validation
 set +e
-"$ROOT_DIR/loglm" agent install not-a-repo > /tmp/loglm-test-invalid.out 2> /tmp/loglm-test-invalid.err
+LOGLM_AGENT_INSTALL_NO_LAUNCH=1 LOGLM_CODING_AGENT=codex "$ROOT_DIR/loglm" agent install not-a-repo > /tmp/loglm-test-invalid.out 2> /tmp/loglm-test-invalid.err
 st=$?
 set -e
 assert_exit_code 2 "$st" "invalid repo validation"
@@ -168,7 +168,7 @@ if [[ "$RUN_E2E" -eq 1 ]]; then
   trap 'rm -rf "$TMP_WORK" "$E2E_DIR"' EXIT
   cd "$E2E_DIR"
 
-  run_cmd "$ROOT_DIR/loglm" agent install "$E2E_REPO" --agent "$E2E_AGENT"
+  run_cmd env LOGLM_AGENT_INSTALL_NO_LAUNCH=1 LOGLM_CODING_AGENT=codex "$ROOT_DIR/loglm" agent install "$E2E_REPO" --agent "$E2E_AGENT"
   pass "e2e install ($E2E_REPO, agent=$E2E_AGENT)"
 
   "$ROOT_DIR/loglm" agent list --agent "$E2E_AGENT" > /tmp/loglm-test-e2e-list1.out 2>/tmp/loglm-test-e2e-list1.err

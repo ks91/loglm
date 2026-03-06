@@ -108,20 +108,41 @@ run_agent_subcommand() {
     exit 1
   fi
 
-  AGENT=""
+  AGENT="${LOGLM_CODING_AGENT:-}"
   # For install, enforce coding-agent selection first.
   if [[ "$subcmd" == "install" ]]; then
-    if [[ ! -f "$AGENT_FILE" ]]; then
-      select_agent
-    else
-      AGENT="$(cat "$AGENT_FILE")"
-      valid=0
-      for a in "${SUPPORTED_AGENTS[@]}"; do
-        [[ "$a" == "$AGENT" ]] && valid=1 && break
-      done
-      if [[ "$valid" -eq 0 ]]; then
-        echo "Warning: unknown agent '$AGENT' stored in $AGENT_FILE. Re-selecting." >&2
+    local skip_select=0
+    for arg in "$@"; do
+      if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+        skip_select=1
+        break
+      fi
+    done
+
+    if [[ "$skip_select" -eq 0 ]]; then
+      if [[ -n "$AGENT" ]]; then
+        valid=0
+        for a in "${SUPPORTED_AGENTS[@]}"; do
+          [[ "$a" == "$AGENT" ]] && valid=1 && break
+        done
+        if [[ "$valid" -eq 0 ]]; then
+          echo "Warning: unknown agent '$AGENT' from LOGLM_CODING_AGENT. Re-selecting." >&2
+          AGENT=""
+        fi
+      fi
+
+      if [[ -z "$AGENT" && ! -f "$AGENT_FILE" ]]; then
         select_agent
+      elif [[ -z "$AGENT" ]]; then
+        AGENT="$(cat "$AGENT_FILE")"
+        valid=0
+        for a in "${SUPPORTED_AGENTS[@]}"; do
+          [[ "$a" == "$AGENT" ]] && valid=1 && break
+        done
+        if [[ "$valid" -eq 0 ]]; then
+          echo "Warning: unknown agent '$AGENT' stored in $AGENT_FILE. Re-selecting." >&2
+          select_agent
+        fi
       fi
     fi
   elif [[ -f "$AGENT_FILE" ]]; then
@@ -130,10 +151,10 @@ run_agent_subcommand() {
 
   case "$subcmd" in
     install)
-      LOGLM_DEFAULT_PROMPT_AGENT="$AGENT" exec "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
+      LOGLM_DEFAULT_PROMPT_AGENT="$AGENT" "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
       ;;
     list|remove|update)
-      LOGLM_DEFAULT_PROMPT_AGENT="$AGENT" exec "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
+      LOGLM_DEFAULT_PROMPT_AGENT="$AGENT" "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
       ;;
     *)
       echo "Error: unknown agent subcommand: $subcmd" >&2
@@ -142,6 +163,8 @@ run_agent_subcommand() {
       ;;
   esac
 }
+
+POST_INSTALL_NEW=0
 
 select_agent() {
   echo "Select AI coding agent:"
@@ -170,7 +193,28 @@ if (($# > 0)) && [[ "$1" == "agent" ]]; then
     usage >&2
     exit 2
   fi
+  AGENT_SUBCMD="$1"
+  AGENT_INSTALL_HELP=0
+  if [[ "$AGENT_SUBCMD" == "install" ]]; then
+    for arg in "$@"; do
+      if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+        AGENT_INSTALL_HELP=1
+        break
+      fi
+    done
+  fi
   run_agent_subcommand "$@"
+  if [[ "$AGENT_SUBCMD" != "install" ]]; then
+    exit 0
+  fi
+  if [[ "$AGENT_INSTALL_HELP" -eq 1 ]]; then
+    exit 0
+  fi
+  if [[ "${LOGLM_AGENT_INSTALL_NO_LAUNCH:-0}" == "1" ]]; then
+    exit 0
+  fi
+  POST_INSTALL_NEW=1
+  set --
 fi
 
 FORCE_NEW=0
@@ -214,6 +258,10 @@ while (($# > 0)); do
 done
 
 mkdir -p "$LOG_DIR"
+
+if [[ "$POST_INSTALL_NEW" -eq 1 ]]; then
+  FORCE_NEW=1
+fi
 
 if [[ "$FORCE_NEW" -eq 1 && "$CHOOSE_RESUME" -eq 1 ]]; then
   echo "Error: --new and --resume cannot be used together." >&2
