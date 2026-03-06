@@ -23,6 +23,10 @@ Examples:
   loglm agent list
   loglm agent remove ks91/gamer-pat
   loglm agent update --all
+
+Notes:
+  - If --agent is omitted, loglm uses the currently selected coding agent
+    from ./.loglm_agent.
 EOF
 }
 
@@ -202,7 +206,7 @@ upsert_block() {
   local file="$1"
   local begin="$2"
   local end="$3"
-  local body="$4"
+  local body_file="$4"
   local tmp
 
   tmp="$(new_tmp_file)"
@@ -210,7 +214,13 @@ upsert_block() {
     : > "$file"
   fi
 
-  awk -v b="$begin" -v e="$end" -v body="$body" '
+  awk -v b="$begin" -v e="$end" -v bf="$body_file" '
+    function print_body( line) {
+      while ((getline line < bf) > 0) {
+        print line;
+      }
+      close(bf);
+    }
     BEGIN {
       inblk=0;
       found=0;
@@ -218,7 +228,7 @@ upsert_block() {
     {
       if ($0 == b) {
         print b;
-        print body;
+        print_body();
         inblk=1;
         found=1;
         next;
@@ -239,7 +249,7 @@ upsert_block() {
       if (!found) {
         if (NR > 0) print "";
         print b;
-        print body;
+        print_body();
         print e;
       }
     }
@@ -306,7 +316,8 @@ install_one_repo_for_agent() {
   local agent="$2"
   local force="$3"
   local base_url source candidate
-  local target body tmp
+  local target tmp
+  local ptmp rtmp
   local pctx pbody b1 e1 b2 e2
 
   base_url="https://raw.githubusercontent.com/$repo/HEAD"
@@ -338,20 +349,23 @@ install_one_repo_for_agent() {
 
   pctx="$(runtime_context)"
   pbody="$(platform_block_content "$pctx")"
+  ptmp="$(new_tmp_file)"
+  printf '%s\n' "$pbody" > "$ptmp"
   b1="$(block_begin_platform)"
   e1="$(block_end_platform)"
-  upsert_block "$target" "$b1" "$e1" "$pbody"
+  upsert_block "$target" "$b1" "$e1" "$ptmp"
 
-  body="$(cat <<EOF
-<!-- source: https://github.com/$repo/blob/HEAD/$source -->
-$(cat "$tmp")
-EOF
-)"
+  rtmp="$(new_tmp_file)"
+  {
+    printf '<!-- source: https://github.com/%s/blob/HEAD/%s -->\n' "$repo" "$source"
+    cat "$tmp"
+  } > "$rtmp"
 
   b2="$(block_begin_repo "$repo" "$agent" "$source")"
   e2="$(block_end_repo "$repo" "$agent")"
-  upsert_block "$target" "$b2" "$e2" "$body"
+  upsert_block "$target" "$b2" "$e2" "$rtmp"
 
+  rm -f "$ptmp" "$rtmp"
   rm -f "$tmp"
   say "[$agent] インストール完了: $target (repo: $repo, source: $source)" \
       "[$agent] Installed: $target (repo: $repo, source: $source)"
@@ -451,7 +465,7 @@ fi
 SUBCMD="$1"
 shift
 
-SCOPE="all"
+SCOPE="${LOGLM_DEFAULT_PROMPT_AGENT:-all}"
 FORCE=0
 TARGET_REPO=""
 UPDATE_ALL=0

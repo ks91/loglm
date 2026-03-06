@@ -107,12 +107,33 @@ run_agent_subcommand() {
     echo "Reinstall loglm and try again." >&2
     exit 1
   fi
+
+  AGENT=""
+  # For install, enforce coding-agent selection first.
+  if [[ "$subcmd" == "install" ]]; then
+    if [[ ! -f "$AGENT_FILE" ]]; then
+      select_agent
+    else
+      AGENT="$(cat "$AGENT_FILE")"
+      valid=0
+      for a in "${SUPPORTED_AGENTS[@]}"; do
+        [[ "$a" == "$AGENT" ]] && valid=1 && break
+      done
+      if [[ "$valid" -eq 0 ]]; then
+        echo "Warning: unknown agent '$AGENT' stored in $AGENT_FILE. Re-selecting." >&2
+        select_agent
+      fi
+    fi
+  elif [[ -f "$AGENT_FILE" ]]; then
+    AGENT="$(cat "$AGENT_FILE")"
+  fi
+
   case "$subcmd" in
     install)
-      exec "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
+      LOGLM_DEFAULT_PROMPT_AGENT="$AGENT" exec "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
       ;;
     list|remove|update)
-      exec "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
+      LOGLM_DEFAULT_PROMPT_AGENT="$AGENT" exec "$SETUP_DIR/agent-install.sh" "$subcmd" "$@"
       ;;
     *)
       echo "Error: unknown agent subcommand: $subcmd" >&2

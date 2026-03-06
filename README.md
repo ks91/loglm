@@ -123,7 +123,7 @@ Supported repository spec:
 
 Supported options:
 
-- `--agent codex|claude|gemini|all` (default: `all`)
+- `--agent codex|claude|gemini|all` (default: current `./.loglm_agent`)
 
 File mapping:
 
