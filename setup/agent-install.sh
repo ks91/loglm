@@ -448,13 +448,13 @@ run_install() {
     return 1
   fi
   if [[ "$failed" -gt 0 ]]; then
-    say "一部失敗しました（installed=$installed failed=$failed）。" \
-        "Partially completed (installed=$installed failed=$failed)." >&2
+    say "一部失敗しました（installed=${installed:-0} failed=${failed:-0}）。" \
+        "Partially completed (installed=${installed:-0} failed=${failed:-0})." >&2
     return 1
   fi
 
-  say "インストール完了（installed=$installed）。" \
-      "Install completed (installed=$installed)."
+  say "インストール完了（installed=${installed:-0}）。" \
+      "Install completed (installed=${installed:-0})."
 }
 
 if [[ $# -lt 1 ]]; then
