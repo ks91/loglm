@@ -180,6 +180,21 @@ You can decode multiple files with shell globbing, for example:
 loglm-decode logs/loglm-codex-log-20260307-*.txt
 ```
 
+## Dev Install (Branch)
+
+For development testing, install from the current branch without editing `REPO_RAW_BASE` manually:
+
+```bash
+bash scripts/dev-install.sh
+```
+
+Optional:
+
+```bash
+bash scripts/dev-install.sh --branch feature/post-v0.1.0
+bash scripts/dev-install.sh --repo ks91/loglm --print-only
+```
+
 ## Regression Test
 
 Run local regression checks (no network required):
