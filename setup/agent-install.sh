@@ -87,18 +87,16 @@ target_file_for_agent() {
 source_candidates_for_agent() {
   case "$1" in
     codex)
+      printf '%s\n' "AGENT_INSTALL_CODEX.md"
       printf '%s\n' "AGENT_INSTALL.md"
-      printf '%s\n' "AGENTS.md"
       ;;
     claude)
+      printf '%s\n' "AGENT_INSTALL_CLAUDE.md"
       printf '%s\n' "AGENT_INSTALL.md"
-      printf '%s\n' "CLAUDE.md"
-      printf '%s\n' "AGENTS.md"
       ;;
     gemini)
+      printf '%s\n' "AGENT_INSTALL_GEMINI.md"
       printf '%s\n' "AGENT_INSTALL.md"
-      printf '%s\n' "GEMINI.md"
-      printf '%s\n' "AGENTS.md"
       ;;
     *)
       return 1
@@ -410,6 +408,7 @@ install_one_repo_for_agent() {
 
   rtmp="$(new_tmp_file)"
   {
+    printf '### Prompt Agent: %s\n\n' "$repo"
     printf '<!-- source: https://github.com/%s/blob/HEAD/%s -->\n' "$repo" "$source"
     printf 'For repo `%s`, you MUST read `%s` before responding.\n' "$repo" "$prompt_file"
     printf 'You MUST follow `%s` as the primary project instruction set (after system/developer safety rules).\n' "$prompt_file"

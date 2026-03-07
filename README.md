@@ -138,6 +138,8 @@ Behavior:
   (example: `ks91/gamer-pat` -> `GAMER-PAT.md`).
 - `install` appends/updates managed reference blocks in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`
   that point to `<REPO-NAME-UPPER>.md`, instead of replacing whole files.
+- Each installed prompt-agent block includes a small heading (`### Prompt Agent: <owner/repo>`)
+  for readability.
 - Managed reference blocks include strong instructions (`MUST read`, `MUST follow`) for consistency
   across codex / claude / gemini.
 - Multiple repositories can be installed into the same file.
