@@ -326,10 +326,11 @@ case "$AGENT" in
     if [[ "$DANGEROUS_MODE" -eq 1 ]]; then
       BASE_CMD+=(--yolo)
     fi
-    if [[ "$CHOOSE_RESUME" -eq 1 ]]; then
-      echo "Note: Gemini does not support interactive session picking; starting normally." >&2
+    if [[ "$FORCE_NEW" -eq 1 ]]; then
+      AGENT_CMD=("${BASE_CMD[@]}")
+    else
+      AGENT_CMD=("${BASE_CMD[@]}" --resume)
     fi
-    AGENT_CMD=("${BASE_CMD[@]}")
     ;;
 esac
 
