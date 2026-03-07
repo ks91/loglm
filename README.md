@@ -127,10 +127,10 @@ Supported options:
 
 File mapping:
 
-- codex -> `AGENTS.md`
-- claude -> `CLAUDE.md` (fallback: `AGENTS.md`)
-- gemini -> `GEMINI.md` (fallback: `AGENTS.md`)
-- all agents -> fallback: `AGENT_INSTALL.md` (recommended)
+- codex source -> `AGENT_INSTALL_CODEX.md` -> `AGENT_INSTALL.md`
+- claude source -> `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md`
+- gemini source -> `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
+- `loglm` uses only the first existing file in that order (no merge).
 
 Behavior:
 

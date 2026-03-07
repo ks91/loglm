@@ -22,15 +22,16 @@ Use RFC-style keywords:
 Place one or more files at repository root:
 
 - SHOULD provide `AGENT_INSTALL.md` as the shared install source for all coding agents.
-- MAY provide `AGENTS.md` for codex-specific behavior.
-- MAY provide `CLAUDE.md` for claude-specific behavior.
-- MAY provide `GEMINI.md` for gemini-specific behavior.
+- MAY provide `AGENT_INSTALL_CODEX.md` for codex-specific behavior.
+- MAY provide `AGENT_INSTALL_CLAUDE.md` for claude-specific behavior.
+- MAY provide `AGENT_INSTALL_GEMINI.md` for gemini-specific behavior.
 
 Resolution order:
 
-- codex: `AGENT_INSTALL.md` -> `AGENTS.md`
-- claude: `AGENT_INSTALL.md` -> `CLAUDE.md` -> `AGENTS.md`
-- gemini: `AGENT_INSTALL.md` -> `GEMINI.md` -> `AGENTS.md`
+- codex: `AGENT_INSTALL_CODEX.md` -> `AGENT_INSTALL.md`
+- claude: `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md`
+- gemini: `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
+- `loglm` reads only the first existing file in this order for each agent (no merge).
 
 Install output model:
 
@@ -191,6 +192,7 @@ Before publishing, verify:
 
 - [ ] `## Non-Negotiable Rules` exists and is first section.
 - [ ] `AGENT_INSTALL.md` is present (unless intentionally agent-specific only).
+- [ ] Agent-specific files use `AGENT_INSTALL_CODEX.md` / `AGENT_INSTALL_CLAUDE.md` / `AGENT_INSTALL_GEMINI.md` naming.
 - [ ] No unresolved placeholders remain.
 - [ ] No `<!-- loglm:begin` or `<!-- loglm:end` markers are present.
 - [ ] No unnecessary filename self-references exist.
