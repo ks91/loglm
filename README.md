@@ -144,6 +144,7 @@ Behavior:
   across codex / claude / gemini.
 - Multiple repositories can be installed into the same file.
 - A platform block is maintained automatically (macOS / WSL2 / Ubuntu on Lima / etc.).
+- The platform block also includes loglm runtime notes (log directory/pattern, decode command, repository URL).
 - `remove` deletes only the matching repo block(s), leaving other content intact.
 - `remove` also deletes `<REPO-NAME-UPPER>.md` when no agent file references that repo anymore.
 - `update` refreshes installed repo block(s) from GitHub (`repo` or `--all`).
@@ -161,12 +162,20 @@ Developer guide for prompt-agent authors:
 Decode raw `script` logs before reading:
 
 ```bash
-loglm-decode logs/loglm-codex-log-20260305.txt
+loglm-decode logs/loglm-codex-log-20260307-100915-pid12345.txt
 ```
 
 This writes:
 
-- `logs/loglm-codex-log-20260305.decoded.txt`
+- `logs/loglm-codex-log-20260307-100915-pid12345.decoded.txt`
+
+If `--daily-log` was used, decode that daily file instead.
+
+You can decode multiple files with shell globbing, for example:
+
+```bash
+loglm-decode logs/loglm-codex-log-20260307-*.txt
+```
 
 ## Regression Test
 

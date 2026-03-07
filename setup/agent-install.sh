@@ -174,6 +174,11 @@ platform_block_content() {
 - Runtime: native macOS.
 - Prefer macOS-native commands and paths.
 - For preview/open, use `open` (example: `open -a Skim paper.pdf`).
+- loglm repository: `https://github.com/ks91/loglm`
+- Raw logs are stored under `./logs/` (from launch directory).
+- Raw log filename pattern: `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
+- If `--daily-log` is used: `logs/loglm-<agent>-log-YYYYMMDD.txt`
+- Decode logs with: `loglm-decode <raw-log-file>`
 EOF
       ;;
     wsl2)
@@ -183,6 +188,11 @@ EOF
 - Linux commands run inside WSL; Windows apps are outside.
 - For opening files on Windows side, prefer `wslview` or `cmd.exe /c start`.
 - Be explicit when converting paths (`wslpath`) between Linux and Windows.
+- loglm repository: `https://github.com/ks91/loglm`
+- Raw logs are stored under `./logs/` (from launch directory).
+- Raw log filename pattern: `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
+- If `--daily-log` is used: `logs/loglm-<agent>-log-YYYYMMDD.txt`
+- Decode logs with: `loglm-decode <raw-log-file>`
 EOF
       ;;
     ubuntu-lima)
@@ -192,6 +202,11 @@ EOF
 - Work inside shared directories when host-side preview is needed.
 - Do not assume guest can directly control host GUI apps.
 - For PDF preview, prefer files in host-shared paths and open from host (e.g., Skim).
+- loglm repository: `https://github.com/ks91/loglm`
+- Raw logs are stored under `./logs/` (from launch directory).
+- Raw log filename pattern: `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
+- If `--daily-log` is used: `logs/loglm-<agent>-log-YYYYMMDD.txt`
+- Decode logs with: `loglm-decode <raw-log-file>`
 EOF
       ;;
     ubuntu)
@@ -200,6 +215,11 @@ EOF
 - Runtime: native Ubuntu.
 - Prefer standard Linux CLI workflow and package management.
 - For GUI actions, use Linux-native tools available in the environment.
+- loglm repository: `https://github.com/ks91/loglm`
+- Raw logs are stored under `./logs/` (from launch directory).
+- Raw log filename pattern: `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
+- If `--daily-log` is used: `logs/loglm-<agent>-log-YYYYMMDD.txt`
+- Decode logs with: `loglm-decode <raw-log-file>`
 EOF
       ;;
     raspberrypi)
@@ -208,6 +228,11 @@ EOF
 - Runtime: Raspberry Pi OS.
 - Keep commands lightweight and avoid heavy defaults.
 - Prefer architecture-compatible binaries and packages.
+- loglm repository: `https://github.com/ks91/loglm`
+- Raw logs are stored under `./logs/` (from launch directory).
+- Raw log filename pattern: `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
+- If `--daily-log` is used: `logs/loglm-<agent>-log-YYYYMMDD.txt`
+- Decode logs with: `loglm-decode <raw-log-file>`
 EOF
       ;;
     chromeos)
@@ -216,6 +241,11 @@ EOF
 - Runtime: Chrome OS Linux container (Crostini).
 - Linux CLI runs in container; host integration can be limited.
 - Prefer container-local workflows and explicit file export paths.
+- loglm repository: `https://github.com/ks91/loglm`
+- Raw logs are stored under `./logs/` (from launch directory).
+- Raw log filename pattern: `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
+- If `--daily-log` is used: `logs/loglm-<agent>-log-YYYYMMDD.txt`
+- Decode logs with: `loglm-decode <raw-log-file>`
 EOF
       ;;
     *)
@@ -223,6 +253,11 @@ EOF
 # loglm Platform Notes (managed)
 - Runtime: generic Linux/unknown.
 - Prefer conservative, portable shell commands.
+- loglm repository: `https://github.com/ks91/loglm`
+- Raw logs are stored under `./logs/` (from launch directory).
+- Raw log filename pattern: `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
+- If `--daily-log` is used: `logs/loglm-<agent>-log-YYYYMMDD.txt`
+- Decode logs with: `loglm-decode <raw-log-file>`
 EOF
       ;;
   esac
