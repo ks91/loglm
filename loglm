@@ -10,6 +10,7 @@ NOW_LOCAL="$(date +%Y%m%d-%H%M%S)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGLM_HOME="${LOGLM_HOME:-$HOME/.local/share/loglm}"
 SETUP_DIR=""
+LOGLM_VERSION="0.1.1-dev"
 
 SUPPORTED_AGENTS=(codex claude gemini)
 
@@ -39,11 +40,17 @@ Options:
         gemini : --yolo
   -h, --help
       Show this help.
+  -v, --version
+      Show loglm version.
 
 Subcommands:
   agent ...
       Manage prompt-agent blocks in AGENTS.md / CLAUDE.md / GEMINI.md.
 EOF
+}
+
+show_version() {
+  printf 'loglm %s\n' "$LOGLM_VERSION"
 }
 
 resolve_setup_dir() {
@@ -247,6 +254,10 @@ while (($# > 0)); do
       ;;
     -h|--help)
       usage
+      exit 0
+      ;;
+    -v|--version)
+      show_version
       exit 0
       ;;
     *)

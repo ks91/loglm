@@ -106,6 +106,7 @@ LOGLM_LANG=both loglm
   - `claude`: `--dangerously-skip-permissions`
   - `gemini`: `--yolo`
 - `-h`, `--help`: Show help.
+- `-v`, `--version`: Show loglm version.
 
 ## Agent Prompt Install
 

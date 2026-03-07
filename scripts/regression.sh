@@ -99,6 +99,10 @@ run_cmd "$ROOT_DIR/loglm" --help
 run_cmd "$ROOT_DIR/loglm" agent install --help
 pass "help output"
 
+"$ROOT_DIR/loglm" --version > /tmp/loglm-test-version.out 2>/tmp/loglm-test-version.err
+rg -q '^loglm [0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' /tmp/loglm-test-version.out || fail "version output format"
+pass "version output"
+
 # 3) Existing option conflict behavior
 set +e
 "$ROOT_DIR/loglm" --new --resume > /tmp/loglm-test-conflict.out 2> /tmp/loglm-test-conflict.err
