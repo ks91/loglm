@@ -98,6 +98,7 @@ LOGLM_LANG=both loglm
 - `--new`: Start a new context (ignore saved session).
 - `--resume`: Open the agent's built-in session picker.
 - For Gemini, default launch uses `gemini --resume`; `--new` starts a new session.
+  If context is not restored as expected, run `/resume` (or `/chat resume`) inside Gemini after launch.
 - `--agent`: Re-select the AI coding agent (`codex` / `claude` / `gemini`).
 - `--daily-log`: Use one log file per day (legacy behavior).
 - `-X`, `--dangerous`: Start the agent in dangerous/no-approval mode.
