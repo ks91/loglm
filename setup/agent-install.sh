@@ -303,6 +303,23 @@ block_end_platform() {
   printf '%s\n' "<!-- loglm:end platform -->"
 }
 
+block_begin_policy() {
+  printf '%s\n' "<!-- loglm:begin policy -->"
+}
+
+block_end_policy() {
+  printf '%s\n' "<!-- loglm:end policy -->"
+}
+
+policy_block_content() {
+  cat <<'EOF'
+# loglm Execution Policy (managed)
+- If a required command fails due to permissions/sandbox restrictions, request escalated execution first.
+- Do not switch to alternative implementation paths before trying the same command with approval.
+- Use alternatives only after escalation is rejected or after escalated execution still fails.
+EOF
+}
+
 block_begin_repo() {
   local repo="$1"
   local agent="$2"
@@ -475,8 +492,8 @@ install_one_repo_for_agent() {
   local base_url source candidate source_ref
   local repo path display
   local target tmp
-  local ptmp rtmp
-  local pctx pbody b1 e1 b2 e2
+  local ptmp poltmp rtmp
+  local pctx pbody polbody b0 e0 b1 e1 b2 e2
   local prompt_file
   local pa_version
 
@@ -538,6 +555,12 @@ install_one_repo_for_agent() {
   pbody="$(platform_block_content "$pctx")"
   ptmp="$(new_tmp_file)"
   printf '%s\n' "$pbody" > "$ptmp"
+  polbody="$(policy_block_content)"
+  poltmp="$(new_tmp_file)"
+  printf '%s\n' "$polbody" > "$poltmp"
+  b0="$(block_begin_policy)"
+  e0="$(block_end_policy)"
+  upsert_block "$target" "$b0" "$e0" "$poltmp"
   b1="$(block_begin_platform)"
   e1="$(block_end_platform)"
   upsert_block "$target" "$b1" "$e1" "$ptmp"
@@ -557,7 +580,7 @@ install_one_repo_for_agent() {
   e2="$(block_end_repo "$spec" "$agent")"
   upsert_block "$target" "$b2" "$e2" "$rtmp"
 
-  rm -f "$ptmp" "$rtmp"
+  rm -f "$ptmp" "$poltmp" "$rtmp"
   rm -f "$tmp"
   say "[$agent] インストール完了: $target (source: $display, file: $source, version: $pa_version, prompt: $prompt_file)" \
       "[$agent] Installed: $target (source: $display, file: $source, version: $pa_version, prompt: $prompt_file)"

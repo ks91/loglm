@@ -162,6 +162,7 @@ Behavior:
   across codex / claude / gemini.
 - Multiple repositories can be installed into the same file.
 - A platform block is maintained automatically (macOS / WSL2 / Ubuntu on Lima / etc.).
+- A common execution-policy block is maintained automatically (escalation-first on permission/sandbox failures).
 - The platform block also includes loglm runtime notes (log directory/pattern, decode command, repository URL).
 - `remove` deletes only the matching repo block(s), leaving other content intact.
 - `remove` also deletes `<REPO-NAME-UPPER>.md` when no agent file references that repo anymore.
