@@ -502,10 +502,11 @@ install_one_repo_for_agent() {
   {
     printf '### Prompt Agent: %s\n\n' "$display"
     printf '<!-- source: %s -->\n' "$source_ref"
-    printf 'For source `%s`, you MUST read `%s` before responding.\n' "$display" "$prompt_file"
+    printf 'For source `%s`, use local installed prompt file `%s` before responding.\n' "$display" "$prompt_file"
+    printf 'Treat `%s` as a file in the current working directory (not in the source repository path).\n' "$prompt_file"
     printf 'You MUST follow `%s` as the primary project instruction set (after system/developer safety rules).\n' "$prompt_file"
     printf 'When the user asks to begin/start the workflow, begin in this prompt-agent mode immediately.\n'
-    printf 'If `%s` cannot be read, report it clearly and ask for recovery.\n' "$prompt_file"
+    printf 'If `%s` is missing in the current directory, report it clearly and ask to reinstall via `loglm agent install ...`.\n' "$prompt_file"
   } > "$rtmp"
 
   b2="$(block_begin_repo "$spec" "$agent" "$source")"
