@@ -172,7 +172,7 @@ rg -q "LOCAL-AGENT-SRC.md" AGENTS.md || fail "local prompt filename reference sh
 pass "local source install works"
 
 "$ROOT_DIR/loglm" agent list --agent codex --verbose > /tmp/loglm-test-list-verbose.out 2>/tmp/loglm-test-list-verbose.err
-rg -q "prompt_agent_version=9.9.9" /tmp/loglm-test-list-verbose.out || fail "verbose list should show prompt-agent version"
+rg -q "prompt_agent_version: 9.9.9" /tmp/loglm-test-list-verbose.out || fail "verbose list should show prompt-agent version"
 pass "agent list --verbose shows prompt-agent version"
 
 # 7) Update validation

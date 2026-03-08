@@ -585,8 +585,11 @@ list_installed_blocks() {
         pav="$(printf '%s\n' "$line" | sed -nE 's/.*paversion=([^ ]+).*/\1/p')"
         [[ -n "$pav" ]] || pav="unknown"
         prompt="$(repo_prompt_filename "$repo")"
-        printf '%s\trepo=%s source=%s prompt=%s prompt_agent_version=%s\n' \
-          "$agent" "$repo" "$source" "$prompt" "$pav"
+        printf '[%s]\n' "$agent"
+        printf 'repo: %s\n' "$repo"
+        printf 'source_file: %s\n' "$source"
+        printf 'prompt_file: %s\n' "$prompt"
+        printf 'prompt_agent_version: %s\n\n' "$pav"
       else
         printf '%s\t%s\n' "$agent" "$line"
       fi
