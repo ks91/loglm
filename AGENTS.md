@@ -20,3 +20,8 @@ This file describes repository-specific conventions for developing `loglm`.
   - `bash scripts/regression.sh`
 - Optional E2E checks:
   - `bash scripts/regression.sh --e2e --repo <owner/repo> --agent <codex|claude|gemini|all>`
+
+## Escalation-First Rule
+- If a required command fails due to permissions/sandbox restrictions, request escalated execution first.
+- Do not switch to alternative implementation paths before trying the same command with user approval.
+- Use alternatives only after escalation is rejected or after escalated execution still fails.
