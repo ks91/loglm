@@ -18,10 +18,10 @@ usage() {
   cat <<'EOF'
 Usage:
   loglm [options]
-  loglm agent install <github_repo_or_url> [--agent codex|claude|gemini|all]
+  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|all]
   loglm agent list [--agent codex|claude|gemini|all]
-  loglm agent remove <github_repo_or_url> [--agent codex|claude|gemini|all]
-  loglm agent update <github_repo_or_url|--all> [--agent codex|claude|gemini|all]
+  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|all]
+  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|all]
 
 Options:
   --new

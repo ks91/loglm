@@ -118,7 +118,7 @@ LOGLM_AGENT_INSTALL_NO_LAUNCH=1 LOGLM_CODING_AGENT=codex "$ROOT_DIR/loglm" agent
 st=$?
 set -e
 assert_exit_code 2 "$st" "invalid repo validation"
-rg -q "Invalid repository spec" /tmp/loglm-test-invalid.err || fail "missing invalid repo message"
+rg -q "Invalid source spec" /tmp/loglm-test-invalid.err || fail "missing invalid source message"
 pass "invalid repo check"
 
 # 5) Managed block list/remove behavior
@@ -134,18 +134,18 @@ cat > AGENTS.md <<'EOF'
 - Runtime: test
 <!-- loglm:end platform -->
 
-<!-- loglm:begin repo=ks91/gamer-pat agent=codex source=AGENTS.md -->
+<!-- loglm:begin repo=gh:ks91/gamer-pat agent=codex source=AGENTS.md -->
 repo block body
-<!-- loglm:end repo=ks91/gamer-pat agent=codex -->
+<!-- loglm:end repo=gh:ks91/gamer-pat agent=codex -->
 EOF
 
 run_cmd "$ROOT_DIR/loglm" agent list
 "$ROOT_DIR/loglm" agent list > /tmp/loglm-test-list1.out 2>/tmp/loglm-test-list1.err
-rg -q "repo=ks91/gamer-pat agent=codex source=AGENTS.md" /tmp/loglm-test-list1.out || fail "agent list should show installed block"
+rg -q "repo=gh:ks91/gamer-pat agent=codex source=AGENTS.md" /tmp/loglm-test-list1.out || fail "agent list should show installed block"
 pass "agent list shows managed repo block"
 
 run_cmd "$ROOT_DIR/loglm" agent remove ks91/gamer-pat --agent codex
-! rg -q "repo=ks91/gamer-pat" AGENTS.md || fail "repo block should be removed"
+! rg -q "repo=gh:ks91/gamer-pat" AGENTS.md || fail "repo block should be removed"
 rg -q "loglm:begin platform" AGENTS.md || fail "platform block should remain"
 rg -q "Existing content" AGENTS.md || fail "existing content should remain"
 pass "agent remove removes only target block"
@@ -154,13 +154,29 @@ pass "agent remove removes only target block"
 rg -q "No installed prompt agents found" /tmp/loglm-test-list2.out || fail "agent list should be empty after remove"
 pass "agent list empty after remove"
 
-# 6) Update validation
+# 6) Local repository install behavior
+LOCAL_REPO="$TMP_WORK/local-agent-src"
+mkdir -p "$LOCAL_REPO"
+cat > "$LOCAL_REPO/AGENT_INSTALL.md" <<'EOF'
+# Local Prompt
+
+## Non-Negotiable Rules
+- Test local install path support.
+EOF
+
+run_cmd env LOGLM_AGENT_INSTALL_NO_LAUNCH=1 LOGLM_CODING_AGENT=codex "$ROOT_DIR/loglm" agent install "$LOCAL_REPO" --agent codex --force
+rg -q "Prompt Agent:" AGENTS.md || fail "managed heading should exist after local install"
+rg -q "LOCAL-AGENT-SRC.md" AGENTS.md || fail "local prompt filename reference should exist"
+[[ -f LOCAL-AGENT-SRC.md ]] || fail "local prompt file should be created"
+pass "local source install works"
+
+# 7) Update validation
 set +e
 "$ROOT_DIR/loglm" agent update > /tmp/loglm-test-update-empty.out 2> /tmp/loglm-test-update-empty.err
 st=$?
 set -e
 assert_exit_code 2 "$st" "agent update with no args"
-rg -q "requires a repository or --all" /tmp/loglm-test-update-empty.err || fail "missing update validation message"
+rg -q "requires a source or --all" /tmp/loglm-test-update-empty.err || fail "missing update validation message"
 pass "agent update validation"
 
 run_cmd "$ROOT_DIR/loglm" agent update --all

@@ -13,13 +13,14 @@ resolve_lang
 usage() {
   cat <<'EOF'
 Usage:
-  loglm agent install <github_repo_or_url> [--agent codex|claude|gemini|all]
+  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|all]
   loglm agent list [--agent codex|claude|gemini|all]
-  loglm agent remove <github_repo_or_url> [--agent codex|claude|gemini|all]
-  loglm agent update <github_repo_or_url|--all> [--agent codex|claude|gemini|all]
+  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|all]
+  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|all]
 
 Examples:
   loglm agent install ks91/gamer-pat
+  loglm agent install ../gamer-pat
   loglm agent list
   loglm agent remove ks91/gamer-pat
   loglm agent update --all
@@ -57,19 +58,41 @@ download_to_file() {
 
 normalize_repo_spec() {
   local spec="$1"
+  local abs path repo
 
-  spec="${spec#https://github.com/}"
-  spec="${spec#http://github.com/}"
-  spec="${spec#git@github.com:}"
-  spec="${spec%.git}"
-  spec="${spec%/}"
-  spec="${spec%%/tree/*}"
-  spec="${spec%%/blob/*}"
+  if [[ -d "$spec" ]]; then
+    abs="$(cd "$spec" && pwd -P)"
+    printf 'local:%s\n' "$abs"
+    return 0
+  fi
 
-  if [[ ! "$spec" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+  path="$spec"
+  path="${path#https://github.com/}"
+  path="${path#http://github.com/}"
+  path="${path#git@github.com:}"
+  path="${path%.git}"
+  path="${path%/}"
+  path="${path%%/tree/*}"
+  path="${path%%/blob/*}"
+
+  if [[ ! "$path" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
     return 1
   fi
 
+  repo="$path"
+  printf 'gh:%s\n' "$repo"
+}
+
+display_name_for_spec() {
+  local spec="$1"
+  if [[ "$spec" == gh:* ]]; then
+    printf '%s\n' "${spec#gh:}"
+    return
+  fi
+  if [[ "$spec" == local:* ]]; then
+    printf '%s\n' "${spec#local:}"
+    return
+  fi
   printf '%s\n' "$spec"
 }
 
@@ -105,9 +128,17 @@ source_candidates_for_agent() {
 }
 
 repo_prompt_filename() {
-  local repo="$1"
+  local spec="$1"
   local base sanitized
-  base="${repo##*/}"
+  if [[ "$spec" == gh:* ]]; then
+    base="${spec#gh:}"
+    base="${base##*/}"
+  elif [[ "$spec" == local:* ]]; then
+    base="${spec#local:}"
+    base="${base##*/}"
+  else
+    base="${spec##*/}"
+  fi
   sanitized="$(printf '%s' "$base" | tr '[:lower:]' '[:upper:]' | sed -E 's/[^A-Z0-9]+/-/g; s/^-+//; s/-+$//')"
   if [[ -z "$sanitized" ]]; then
     sanitized="PROMPT-AGENT"
@@ -116,24 +147,24 @@ repo_prompt_filename() {
 }
 
 write_repo_prompt_file() {
-  local repo="$1"
+  local spec="$1"
   local source="$2"
   local src_file="$3"
   local out
 
-  out="$(repo_prompt_filename "$repo")"
+  out="$(repo_prompt_filename "$spec")"
   {
-    printf '<!-- source: https://github.com/%s/blob/HEAD/%s -->\n' "$repo" "$source"
+    printf '<!-- source: %s -->\n' "$source"
     cat "$src_file"
   } > "$out"
 }
 
-repo_is_referenced_anywhere() {
-  local repo="$1"
+spec_is_referenced_anywhere() {
+  local spec="$1"
   local file
   for file in AGENTS.md CLAUDE.md GEMINI.md; do
     [[ -f "$file" ]] || continue
-    if grep -q "repo=$repo " "$file"; then
+    if grep -Fq "repo=$spec " "$file"; then
       return 0
     fi
   done
@@ -141,10 +172,10 @@ repo_is_referenced_anywhere() {
 }
 
 remove_repo_prompt_file_if_unreferenced() {
-  local repo="$1"
+  local spec="$1"
   local prompt_file
-  prompt_file="$(repo_prompt_filename "$repo")"
-  if repo_is_referenced_anywhere "$repo"; then
+  prompt_file="$(repo_prompt_filename "$spec")"
+  if spec_is_referenced_anywhere "$spec"; then
     return 0
   fi
   rm -f "$prompt_file"
@@ -365,12 +396,14 @@ file_has_non_loglm_content() {
   local file="$1"
   [[ -f "$file" ]] || return 1
   awk '
+    BEGIN { inblk=0; }
     {
+      if ($0 ~ /^<!-- loglm:begin /) { inblk=1; next; }
+      if ($0 ~ /^<!-- loglm:end /) { inblk=0; next; }
+      if (inblk) next;
       line=$0;
       gsub(/[[:space:]]/, "", line);
       if (line == "") next;
-      if ($0 ~ /^<!-- loglm:/) next;
-      if ($0 ~ /^# loglm Platform Notes \(managed\)/) next;
       print "yes";
       exit;
     }
@@ -394,36 +427,60 @@ ensure_user_consents_to_modify() {
 }
 
 install_one_repo_for_agent() {
-  local repo="$1"
+  local spec="$1"
   local agent="$2"
   local force="$3"
-  local base_url source candidate
+  local base_url source candidate source_ref
+  local repo path display
   local target tmp
   local ptmp rtmp
   local pctx pbody b1 e1 b2 e2
   local prompt_file
 
-  base_url="https://raw.githubusercontent.com/$repo/HEAD"
+  if [[ "$spec" == gh:* ]]; then
+    repo="${spec#gh:}"
+    base_url="https://raw.githubusercontent.com/$repo/HEAD"
+    display="$repo"
+  elif [[ "$spec" == local:* ]]; then
+    path="${spec#local:}"
+    display="$path"
+  else
+    say "[$agent] 未対応のソース形式です: $spec" \
+        "[$agent] Unsupported source spec: $spec" >&2
+    return 1
+  fi
+
   source=""
+  source_ref=""
   tmp="$(new_tmp_file)"
 
   while IFS= read -r candidate; do
     [[ -z "$candidate" ]] && continue
-    if download_to_file "$base_url/$candidate" "$tmp" && [[ -s "$tmp" ]]; then
-      source="$candidate"
-      break
+    if [[ "$spec" == gh:* ]]; then
+      if download_to_file "$base_url/$candidate" "$tmp" && [[ -s "$tmp" ]]; then
+        source="$candidate"
+        source_ref="https://github.com/$repo/blob/HEAD/$candidate"
+        break
+      fi
+    else
+      if [[ -s "$path/$candidate" ]]; then
+        cat "$path/$candidate" > "$tmp"
+        source="$candidate"
+        source_ref="local:$path/$candidate"
+        break
+      fi
     fi
   done < <(source_candidates_for_agent "$agent")
 
   if [[ -z "$source" ]]; then
     rm -f "$tmp"
-    say "[$agent] リポジトリに対応ファイルが見つかりません: $repo" \
-        "[$agent] No compatible prompt file found in repository: $repo" >&2
+    say "[$agent] 対応ファイルが見つかりません: $display" \
+        "[$agent] No compatible prompt file found: $display" >&2
     return 1
   fi
 
-  write_repo_prompt_file "$repo" "$source" "$tmp"
-  prompt_file="$(repo_prompt_filename "$repo")"
+  write_repo_prompt_file "$spec" "$source_ref" "$tmp"
+  prompt_file="$(repo_prompt_filename "$spec")"
 
   target="$(target_file_for_agent "$agent")"
   if ! ensure_user_consents_to_modify "$target" "$force"; then
@@ -443,22 +500,22 @@ install_one_repo_for_agent() {
 
   rtmp="$(new_tmp_file)"
   {
-    printf '### Prompt Agent: %s\n\n' "$repo"
-    printf '<!-- source: https://github.com/%s/blob/HEAD/%s -->\n' "$repo" "$source"
-    printf 'For repo `%s`, you MUST read `%s` before responding.\n' "$repo" "$prompt_file"
+    printf '### Prompt Agent: %s\n\n' "$display"
+    printf '<!-- source: %s -->\n' "$source_ref"
+    printf 'For source `%s`, you MUST read `%s` before responding.\n' "$display" "$prompt_file"
     printf 'You MUST follow `%s` as the primary project instruction set (after system/developer safety rules).\n' "$prompt_file"
     printf 'When the user asks to begin/start the workflow, begin in this prompt-agent mode immediately.\n'
     printf 'If `%s` cannot be read, report it clearly and ask for recovery.\n' "$prompt_file"
   } > "$rtmp"
 
-  b2="$(block_begin_repo "$repo" "$agent" "$source")"
-  e2="$(block_end_repo "$repo" "$agent")"
+  b2="$(block_begin_repo "$spec" "$agent" "$source")"
+  e2="$(block_end_repo "$spec" "$agent")"
   upsert_block "$target" "$b2" "$e2" "$rtmp"
 
   rm -f "$ptmp" "$rtmp"
   rm -f "$tmp"
-  say "[$agent] インストール完了: $target (repo: $repo, source: $source, prompt: $prompt_file)" \
-      "[$agent] Installed: $target (repo: $repo, source: $source, prompt: $prompt_file)"
+  say "[$agent] インストール完了: $target (source: $display, file: $source, prompt: $prompt_file)" \
+      "[$agent] Installed: $target (source: $display, file: $source, prompt: $prompt_file)"
   return 0
 }
 
@@ -486,7 +543,7 @@ list_installed_blocks() {
 }
 
 remove_repo_from_agent_file() {
-  local repo="$1"
+  local spec="$1"
   local agent="$2"
   local file b e
 
@@ -495,10 +552,10 @@ remove_repo_from_agent_file() {
 
   while IFS= read -r src; do
     [[ -z "$src" ]] && continue
-    b="$(block_begin_repo "$repo" "$agent" "$src")"
-    e="$(block_end_repo "$repo" "$agent")"
+    b="$(block_begin_repo "$spec" "$agent" "$src")"
+    e="$(block_end_repo "$spec" "$agent")"
     remove_block "$file" "$b" "$e"
-  done < <(grep -o "repo=$repo agent=$agent source=[^ ]*" "$file" | sed -E 's/.*source=([^ ]*)/\1/' | sort -u)
+  done < <(grep -F "repo=$spec agent=$agent " "$file" | sed -E 's/.*source=([^ ]*).*/\1/' | sort -u)
 }
 
 repos_from_files() {
@@ -515,7 +572,7 @@ repos_from_files() {
 }
 
 run_install() {
-  local repo="$1"
+  local spec="$1"
   local scope="$2"
   local force="$3"
   local installed=0
@@ -525,7 +582,7 @@ run_install() {
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
-    if install_one_repo_for_agent "$repo" "$agent" "$force"; then
+    if install_one_repo_for_agent "$spec" "$agent" "$force"; then
       installed=$((installed + 1))
     else
       failed=$((failed + 1))
@@ -557,7 +614,7 @@ shift
 
 SCOPE="${LOGLM_DEFAULT_PROMPT_AGENT:-all}"
 FORCE=0
-TARGET_REPO=""
+TARGET_SPEC=""
 UPDATE_ALL=0
 
 while (($# > 0)); do
@@ -590,13 +647,13 @@ while (($# > 0)); do
       exit 2
       ;;
     *)
-      if [[ -n "$TARGET_REPO" ]]; then
+      if [[ -n "$TARGET_SPEC" ]]; then
         say "引数が多すぎます: $1" \
             "Too many arguments: $1" >&2
         usage >&2
         exit 2
       fi
-      TARGET_REPO="$1"
+      TARGET_SPEC="$1"
       shift
       ;;
   esac
@@ -613,18 +670,18 @@ esac
 
 case "$SUBCMD" in
   install)
-    if [[ -z "$TARGET_REPO" ]]; then
-      say "GitHub リポジトリ指定が必要です。" \
-          "GitHub repository is required." >&2
+    if [[ -z "$TARGET_SPEC" ]]; then
+      say "ソース指定が必要です（GitHub またはローカルパス）。" \
+          "Source is required (GitHub repo or local path)." >&2
       usage >&2
       exit 2
     fi
-    if ! TARGET_REPO="$(normalize_repo_spec "$TARGET_REPO")"; then
-      say "リポジトリ形式が不正です: $TARGET_REPO" \
-          "Invalid repository spec: $TARGET_REPO" >&2
+    if ! TARGET_SPEC="$(normalize_repo_spec "$TARGET_SPEC")"; then
+      say "ソース形式が不正です: $TARGET_SPEC" \
+          "Invalid source spec: $TARGET_SPEC" >&2
       exit 2
     fi
-    run_install "$TARGET_REPO" "$SCOPE" "$FORCE"
+    run_install "$TARGET_SPEC" "$SCOPE" "$FORCE"
     ;;
 
   list)
@@ -632,53 +689,53 @@ case "$SUBCMD" in
     ;;
 
   remove)
-    if [[ -z "$TARGET_REPO" ]]; then
-      say "GitHub リポジトリ指定が必要です。" \
-          "GitHub repository is required." >&2
+    if [[ -z "$TARGET_SPEC" ]]; then
+      say "ソース指定が必要です（GitHub またはローカルパス）。" \
+          "Source is required (GitHub repo or local path)." >&2
       usage >&2
       exit 2
     fi
-    if ! TARGET_REPO="$(normalize_repo_spec "$TARGET_REPO")"; then
-      say "リポジトリ形式が不正です: $TARGET_REPO" \
-          "Invalid repository spec: $TARGET_REPO" >&2
+    if ! TARGET_SPEC="$(normalize_repo_spec "$TARGET_SPEC")"; then
+      say "ソース形式が不正です: $TARGET_SPEC" \
+          "Invalid source spec: $TARGET_SPEC" >&2
       exit 2
     fi
     for agent in codex claude gemini; do
       if [[ "$SCOPE" != "all" && "$SCOPE" != "$agent" ]]; then
         continue
       fi
-      remove_repo_from_agent_file "$TARGET_REPO" "$agent"
-      say "[$agent] 削除処理完了: $TARGET_REPO" \
-          "[$agent] Remove completed: $TARGET_REPO"
+      remove_repo_from_agent_file "$TARGET_SPEC" "$agent"
+      say "[$agent] 削除処理完了: $TARGET_SPEC" \
+          "[$agent] Remove completed: $TARGET_SPEC"
     done
-    remove_repo_prompt_file_if_unreferenced "$TARGET_REPO"
+    remove_repo_prompt_file_if_unreferenced "$TARGET_SPEC"
     ;;
 
   update)
     if [[ "$UPDATE_ALL" -eq 1 ]]; then
-      if [[ -n "$TARGET_REPO" ]]; then
-        say "update --all と repo 指定は同時に使えません。" \
-            "Cannot use update --all with repository argument." >&2
+      if [[ -n "$TARGET_SPEC" ]]; then
+        say "update --all と source 指定は同時に使えません。" \
+            "Cannot use update --all with source argument." >&2
         exit 2
       fi
-      while IFS= read -r repo; do
-        [[ -z "$repo" ]] && continue
-        run_install "$repo" "$SCOPE" 1 || true
+      while IFS= read -r spec; do
+        [[ -z "$spec" ]] && continue
+        run_install "$spec" "$SCOPE" 1 || true
       done < <(repos_from_files "$SCOPE")
       exit 0
     fi
 
-    if [[ -z "$TARGET_REPO" ]]; then
-      say "update には repo か --all が必要です。" \
-          "update requires a repository or --all." >&2
+    if [[ -z "$TARGET_SPEC" ]]; then
+      say "update には source か --all が必要です。" \
+          "update requires a source or --all." >&2
       exit 2
     fi
-    if ! TARGET_REPO="$(normalize_repo_spec "$TARGET_REPO")"; then
-      say "リポジトリ形式が不正です: $TARGET_REPO" \
-          "Invalid repository spec: $TARGET_REPO" >&2
+    if ! TARGET_SPEC="$(normalize_repo_spec "$TARGET_SPEC")"; then
+      say "ソース形式が不正です: $TARGET_SPEC" \
+          "Invalid source spec: $TARGET_SPEC" >&2
       exit 2
     fi
-    run_install "$TARGET_REPO" "$SCOPE" 1
+    run_install "$TARGET_SPEC" "$SCOPE" 1
     ;;
 
   *)

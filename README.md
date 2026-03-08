@@ -114,6 +114,7 @@ Manage prompt-agent blocks in the current directory:
 
 ```bash
 loglm agent install ks91/gamer-pat
+loglm agent install ../gamer-pat
 loglm agent list
 loglm agent remove ks91/gamer-pat
 loglm agent update --all
@@ -123,6 +124,7 @@ Supported repository spec:
 
 - `owner/repo`
 - `https://github.com/owner/repo`
+- local repository path (for development/private use), e.g. `../gamer-pat` or `/path/to/repo`
 
 Supported options:
 
@@ -134,6 +136,7 @@ File mapping:
 - claude source -> `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md`
 - gemini source -> `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
 - `loglm` uses only the first existing file in that order (no merge).
+- For local source paths, the same file mapping/rules apply.
 
 Behavior:
 
