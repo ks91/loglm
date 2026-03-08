@@ -129,6 +129,7 @@ Supported repository spec:
 Supported options:
 
 - `--agent codex|claude|gemini|all` (default: current `./.loglm_agent`)
+- `--verbose` (for `list`): show prompt file and prompt-agent version metadata
 
 File mapping:
 
@@ -137,6 +138,17 @@ File mapping:
 - gemini source -> `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
 - `loglm` uses only the first existing file in that order (no merge).
 - For local source paths, the same file mapping/rules apply.
+
+Prompt-agent version metadata (recommended in `AGENT_INSTALL*.md`):
+
+- HTML comment: `<!-- prompt-agent-version: 1.2.3 -->`
+- or YAML front matter: `prompt_agent_version: 1.2.3`
+
+Then view with:
+
+```bash
+loglm agent list --verbose
+```
 
 Behavior:
 
@@ -153,7 +165,7 @@ Behavior:
 - The platform block also includes loglm runtime notes (log directory/pattern, decode command, repository URL).
 - `remove` deletes only the matching repo block(s), leaving other content intact.
 - `remove` also deletes `<REPO-NAME-UPPER>.md` when no agent file references that repo anymore.
-- `update` refreshes installed repo block(s) from GitHub (`repo` or `--all`).
+- `update` refreshes installed source block(s) (`github/local source` or `--all`).
 - After `loglm agent install ...` completes, `loglm` starts the current coding agent in a new context.
 - After auto-launch, send a short kickoff cue to begin the installed prompt-agent workflow
   (for example: `Let's begin.` or `はじめよう。`).

@@ -14,7 +14,7 @@ usage() {
   cat <<'EOF'
 Usage:
   loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|all]
-  loglm agent list [--agent codex|claude|gemini|all]
+  loglm agent list [--agent codex|claude|gemini|all] [--verbose]
   loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|all]
   loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|all]
 
@@ -28,6 +28,7 @@ Examples:
 Notes:
   - If --agent is omitted, loglm uses the currently selected coding agent
     from ./.loglm_agent.
+  - --verbose (for list) shows installed prompt file and prompt-agent version.
 EOF
 }
 
@@ -306,7 +307,8 @@ block_begin_repo() {
   local repo="$1"
   local agent="$2"
   local source="$3"
-  printf '<!-- loglm:begin repo=%s agent=%s source=%s -->\n' "$repo" "$agent" "$source"
+  local paversion="${4:-unknown}"
+  printf '<!-- loglm:begin repo=%s agent=%s source=%s paversion=%s -->\n' "$repo" "$agent" "$source" "$paversion"
 }
 
 block_end_repo() {
@@ -426,6 +428,46 @@ ensure_user_consents_to_modify() {
     "$file has existing content. Append loglm managed blocks?"
 }
 
+parse_prompt_agent_version() {
+  local file="$1"
+  local v
+
+  v="$(
+    sed -n '1,80p' "$file" \
+      | sed -nE 's@^[[:space:]]*<!--[[:space:]]*prompt-agent-version:[[:space:]]*([^[:space:]]+)[[:space:]]*-->[[:space:]]*$@\1@p' \
+      | head -n 1
+  )"
+  if [[ -n "$v" ]]; then
+    printf '%s\n' "$v"
+    return 0
+  fi
+
+  if sed -n '1,1p' "$file" | grep -q '^---[[:space:]]*$'; then
+    v="$(
+      sed -n '2,80p' "$file" \
+        | sed -n '/^---[[:space:]]*$/q;p' \
+        | sed -nE 's/^[[:space:]]*prompt_agent_version:[[:space:]]*([^[:space:]]+).*/\1/p' \
+        | head -n 1
+    )"
+    if [[ -n "$v" ]]; then
+      printf '%s\n' "$v"
+      return 0
+    fi
+    v="$(
+      sed -n '2,80p' "$file" \
+        | sed -n '/^---[[:space:]]*$/q;p' \
+        | sed -nE 's/^[[:space:]]*prompt-agent-version:[[:space:]]*([^[:space:]]+).*/\1/p' \
+        | head -n 1
+    )"
+    if [[ -n "$v" ]]; then
+      printf '%s\n' "$v"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "unknown"
+}
+
 install_one_repo_for_agent() {
   local spec="$1"
   local agent="$2"
@@ -436,6 +478,7 @@ install_one_repo_for_agent() {
   local ptmp rtmp
   local pctx pbody b1 e1 b2 e2
   local prompt_file
+  local pa_version
 
   if [[ "$spec" == gh:* ]]; then
     repo="${spec#gh:}"
@@ -481,6 +524,7 @@ install_one_repo_for_agent() {
 
   write_repo_prompt_file "$spec" "$source_ref" "$tmp"
   prompt_file="$(repo_prompt_filename "$spec")"
+  pa_version="$(parse_prompt_agent_version "$tmp")"
 
   target="$(target_file_for_agent "$agent")"
   if ! ensure_user_consents_to_modify "$target" "$force"; then
@@ -509,21 +553,23 @@ install_one_repo_for_agent() {
     printf 'If `%s` is missing in the current directory, report it clearly and ask to reinstall via `loglm agent install ...`.\n' "$prompt_file"
   } > "$rtmp"
 
-  b2="$(block_begin_repo "$spec" "$agent" "$source")"
+  b2="$(block_begin_repo "$spec" "$agent" "$source" "$pa_version")"
   e2="$(block_end_repo "$spec" "$agent")"
   upsert_block "$target" "$b2" "$e2" "$rtmp"
 
   rm -f "$ptmp" "$rtmp"
   rm -f "$tmp"
-  say "[$agent] インストール完了: $target (source: $display, file: $source, prompt: $prompt_file)" \
-      "[$agent] Installed: $target (source: $display, file: $source, prompt: $prompt_file)"
+  say "[$agent] インストール完了: $target (source: $display, file: $source, version: $pa_version, prompt: $prompt_file)" \
+      "[$agent] Installed: $target (source: $display, file: $source, version: $pa_version, prompt: $prompt_file)"
   return 0
 }
 
 list_installed_blocks() {
   local scope="$1"
+  local verbose="$2"
   local file
   local found=0
+  local repo source pav prompt
 
   for agent in codex claude gemini; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
@@ -533,8 +579,18 @@ list_installed_blocks() {
     [[ -f "$file" ]] || continue
     while IFS= read -r line; do
       found=1
-      printf '%s\t%s\n' "$agent" "$line"
-    done < <(grep -o 'repo=[^ ]* agent=[^ ]* source=[^ ]*' "$file" | sort -u)
+      if [[ "$verbose" -eq 1 ]]; then
+        repo="$(printf '%s\n' "$line" | sed -nE 's/.*repo=([^ ]+).*/\1/p')"
+        source="$(printf '%s\n' "$line" | sed -nE 's/.*source=([^ ]+).*/\1/p')"
+        pav="$(printf '%s\n' "$line" | sed -nE 's/.*paversion=([^ ]+).*/\1/p')"
+        [[ -n "$pav" ]] || pav="unknown"
+        prompt="$(repo_prompt_filename "$repo")"
+        printf '%s\trepo=%s source=%s prompt=%s prompt_agent_version=%s\n' \
+          "$agent" "$repo" "$source" "$prompt" "$pav"
+      else
+        printf '%s\t%s\n' "$agent" "$line"
+      fi
+    done < <(grep -o 'repo=[^ ]* agent=[^ ]* source=[^ ]*\( paversion=[^ ]*\)\?' "$file" | sort -u)
   done
 
   if [[ "$found" -eq 0 ]]; then
@@ -551,12 +607,11 @@ remove_repo_from_agent_file() {
   file="$(target_file_for_agent "$agent")"
   [[ -f "$file" ]] || return 0
 
-  while IFS= read -r src; do
-    [[ -z "$src" ]] && continue
-    b="$(block_begin_repo "$spec" "$agent" "$src")"
+  while IFS= read -r b; do
+    [[ -z "$b" ]] && continue
     e="$(block_end_repo "$spec" "$agent")"
     remove_block "$file" "$b" "$e"
-  done < <(grep -F "repo=$spec agent=$agent " "$file" | sed -E 's/.*source=([^ ]*).*/\1/' | sort -u)
+  done < <(grep -F "<!-- loglm:begin repo=$spec agent=$agent " "$file" | sort -u)
 }
 
 repos_from_files() {
@@ -617,6 +672,7 @@ SCOPE="${LOGLM_DEFAULT_PROMPT_AGENT:-all}"
 FORCE=0
 TARGET_SPEC=""
 UPDATE_ALL=0
+VERBOSE=0
 
 while (($# > 0)); do
   case "$1" in
@@ -635,6 +691,10 @@ while (($# > 0)); do
       ;;
     --all)
       UPDATE_ALL=1
+      shift
+      ;;
+    --verbose|-v)
+      VERBOSE=1
       shift
       ;;
     -h|--help)
@@ -686,7 +746,7 @@ case "$SUBCMD" in
     ;;
 
   list)
-    list_installed_blocks "$SCOPE"
+    list_installed_blocks "$SCOPE" "$VERBOSE"
     ;;
 
   remove)

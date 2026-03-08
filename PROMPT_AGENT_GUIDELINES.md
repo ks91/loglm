@@ -39,6 +39,15 @@ Install output model:
 - `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` receive managed reference blocks that point to `<REPO-NAME-UPPER>.md`.
 - Prompt-agent authors SHOULD design content assuming it will be consumed from that shared local file.
 
+Prompt-agent version metadata (recommended):
+
+- HTML comment near top: `<!-- prompt-agent-version: 1.2.3 -->`
+- or YAML front matter key: `prompt_agent_version: 1.2.3`
+- Use these exact key names (shared/common keys).
+- Do not use agent-specific key names like `gamer-pat-version`; `loglm` does not parse them.
+
+`loglm agent list --verbose` reads this metadata when available.
+
 ## 3. Authoring Model (Agent-Generated Output)
 
 Assume a coding agent will read this guideline and generate/update the final prompt file.

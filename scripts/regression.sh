@@ -158,6 +158,7 @@ pass "agent list empty after remove"
 LOCAL_REPO="$TMP_WORK/local-agent-src"
 mkdir -p "$LOCAL_REPO"
 cat > "$LOCAL_REPO/AGENT_INSTALL.md" <<'EOF'
+<!-- prompt-agent-version: 9.9.9 -->
 # Local Prompt
 
 ## Non-Negotiable Rules
@@ -169,6 +170,10 @@ rg -q "Prompt Agent:" AGENTS.md || fail "managed heading should exist after loca
 rg -q "LOCAL-AGENT-SRC.md" AGENTS.md || fail "local prompt filename reference should exist"
 [[ -f LOCAL-AGENT-SRC.md ]] || fail "local prompt file should be created"
 pass "local source install works"
+
+"$ROOT_DIR/loglm" agent list --agent codex --verbose > /tmp/loglm-test-list-verbose.out 2>/tmp/loglm-test-list-verbose.err
+rg -q "prompt_agent_version=9.9.9" /tmp/loglm-test-list-verbose.out || fail "verbose list should show prompt-agent version"
+pass "agent list --verbose shows prompt-agent version"
 
 # 7) Update validation
 set +e
