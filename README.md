@@ -247,3 +247,7 @@ Environment variables:
 - `LOGLM_INSTALL_DIR` / `LOGLM_HOME` are also honored by `uninstall.sh`
 - `LOGLM_LANG`: setup prompt language (`ja`, `en`, or `both`)
 - `LOGLM_PLATFORM`: platform override for setup scripts (advanced/debug)
+
+## License
+
+GNU General Public License v3.0 or later (`GPL-3.0-or-later`).
