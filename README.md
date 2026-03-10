@@ -41,11 +41,16 @@ Removes only:
 
 ## Supported Platforms
 
+Tested:
+
 - macOS
 - Ubuntu
 - Ubuntu on Lima (macOS)
 - Ubuntu on WSL2
 - Raspberry Pi OS
+
+Untested:
+
 - Chrome OS (Linux container / Crostini)
 
 ## Usage
