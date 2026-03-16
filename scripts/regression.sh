@@ -103,7 +103,53 @@ pass "help output"
 rg -q '^loglm [0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' /tmp/loglm-test-version.out || fail "version output format"
 pass "version output"
 
-# 3) Existing option conflict behavior
+# 3) install-node runtime behavior for missing NVM_DIR
+NODE_TMP="$(/usr/bin/mktemp -d)"
+trap 'rm -rf "$TMP_WORK" "$NODE_TMP"' EXIT
+mkdir -p "$NODE_TMP/home" "$NODE_TMP/bin"
+
+cat > "$NODE_TMP/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+cat <<'SCRIPT'
+#!/usr/bin/env bash
+mkdir -p "$NVM_DIR"
+cat > "$NVM_DIR/nvm.sh" <<'EOS'
+nvm() {
+  return 0
+}
+EOS
+SCRIPT
+EOF
+chmod +x "$NODE_TMP/bin/curl"
+
+cat > "$NODE_TMP/bin/node" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$NODE_TMP/bin/node"
+
+cat > "$NODE_TMP/bin/npm" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$NODE_TMP/bin/npm"
+
+cat > "$NODE_TMP/home/.profile" <<'EOF'
+# regression test profile
+EOF
+
+run_cmd env \
+  HOME="$NODE_TMP/home" \
+  PATH="$NODE_TMP/bin:$PATH" \
+  LOGLM_PLATFORM=chromeos \
+  LOGLM_LANG=en \
+  NVM_DIR="$NODE_TMP/home/custom-nvm" \
+  bash "$ROOT_DIR/setup/install-node.sh"
+[[ -d "$NODE_TMP/home/custom-nvm" ]] || fail "install-node should create missing NVM_DIR"
+[[ -f "$NODE_TMP/home/custom-nvm/nvm.sh" ]] || fail "install-node should create nvm.sh in NVM_DIR"
+pass "install-node handles missing NVM_DIR"
+
+# 4) Existing option conflict behavior
 set +e
 "$ROOT_DIR/loglm" --new --resume > /tmp/loglm-test-conflict.out 2> /tmp/loglm-test-conflict.err
 st=$?
@@ -112,7 +158,7 @@ assert_exit_code 2 "$st" "--new/--resume conflict"
 rg -q "cannot be used together" /tmp/loglm-test-conflict.err || fail "missing conflict message"
 pass "option conflict check"
 
-# 4) Invalid repo validation
+# 5) Invalid repo validation
 set +e
 LOGLM_AGENT_INSTALL_NO_LAUNCH=1 LOGLM_CODING_AGENT=codex "$ROOT_DIR/loglm" agent install not-a-repo > /tmp/loglm-test-invalid.out 2> /tmp/loglm-test-invalid.err
 st=$?
@@ -121,9 +167,9 @@ assert_exit_code 2 "$st" "invalid repo validation"
 rg -q "Invalid source spec" /tmp/loglm-test-invalid.err || fail "missing invalid source message"
 pass "invalid repo check"
 
-# 5) Managed block list/remove behavior
+# 6) Managed block list/remove behavior
 TMP_WORK="$(/usr/bin/mktemp -d)"
-trap 'rm -rf "$TMP_WORK"' EXIT
+trap 'rm -rf "$TMP_WORK" "$NODE_TMP"' EXIT
 cd "$TMP_WORK"
 
 cat > AGENTS.md <<'EOF'
@@ -154,7 +200,7 @@ pass "agent remove removes only target block"
 rg -q "No installed prompt agents found" /tmp/loglm-test-list2.out || fail "agent list should be empty after remove"
 pass "agent list empty after remove"
 
-# 6) Local repository install behavior
+# 7) Local repository install behavior
 LOCAL_REPO="$TMP_WORK/local-agent-src"
 mkdir -p "$LOCAL_REPO"
 cat > "$LOCAL_REPO/AGENT_INSTALL.md" <<'EOF'
@@ -175,7 +221,7 @@ pass "local source install works"
 rg -q "prompt_agent_version: 9.9.9" /tmp/loglm-test-list-verbose.out || fail "verbose list should show prompt-agent version"
 pass "agent list --verbose shows prompt-agent version"
 
-# 7) Update validation
+# 8) Update validation
 set +e
 "$ROOT_DIR/loglm" agent update > /tmp/loglm-test-update-empty.out 2> /tmp/loglm-test-update-empty.err
 st=$?
@@ -188,7 +234,7 @@ run_cmd "$ROOT_DIR/loglm" agent update --all
 pass "agent update --all on empty set"
 
 if [[ "$RUN_E2E" -eq 1 ]]; then
-  # 7) Network E2E: install/list/update/remove cycle against real GitHub repo
+  # 9) Network E2E: install/list/update/remove cycle against real GitHub repo
   E2E_DIR="$(/usr/bin/mktemp -d)"
   trap 'rm -rf "$TMP_WORK" "$E2E_DIR"' EXIT
   cd "$E2E_DIR"

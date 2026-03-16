@@ -74,6 +74,9 @@ ensure_nvm_installed() {
     return 1
   fi
 
+  # Some environments export NVM_DIR without creating it first.
+  mkdir -p "$NVM_DIR"
+
   say "nvm をインストールします..." \
       "Installing nvm..."
   if command -v curl > /dev/null 2>&1; then
