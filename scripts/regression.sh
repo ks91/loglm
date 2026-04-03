@@ -149,6 +149,33 @@ rg -q '^› new prompt$' "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.decod
 ! rg -q '^› old prompt$' "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.decoded.txt" || fail "decode overlap trimming should drop repeated leading context"
 pass "decode overlap trimming"
 
+cat > "$DECODE_TMP/loglm-claude-log-20260403-030000-pid3.txt" <<'EOF'
+===== loglm start [claude]: 2026-04-03 03:00:00 +0900 =====
+
+╭─── Claude Code v2.1.89 ──────────────────────────────────────────────────────╮
+(status)
+❯ old prompt
+⏺ first response
+EOF
+cat > "$DECODE_TMP/loglm-claude-log-20260403-040000-pid4.txt" <<'EOF'
+===== loglm start [claude]: 2026-04-03 04:00:00 +0900 =====
+
+╭─── Claude Code v2.1.89 ──────────────────────────────────────────────────────╮
+(status)
+❯ old prompt
+⏺ first response
+(status)
+❯ new prompt
+⏺ second response
+EOF
+
+run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-claude-log-20260403-030000-pid3.txt"
+run_cmd env LOGLM_DECODE_MIN_OVERLAP_LINES=3 LOGLM_DECODE_MIN_OVERLAP_CHARS=10 \
+  "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-claude-log-20260403-040000-pid4.txt"
+rg -q '^❯ new prompt$' "$DECODE_TMP/loglm-claude-log-20260403-040000-pid4.decoded.txt" || fail "decode overlap trimming should preserve Claude-style new prompt boundaries"
+! rg -q '^❯ old prompt$' "$DECODE_TMP/loglm-claude-log-20260403-040000-pid4.decoded.txt" || fail "decode overlap trimming should drop repeated Claude-style leading context"
+pass "decode overlap trimming for Claude-style prompts"
+
 # 4) install-node runtime behavior for missing NVM_DIR
 NODE_TMP="$(/usr/bin/mktemp -d)"
 trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP"' EXIT

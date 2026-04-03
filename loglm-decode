@@ -580,8 +580,16 @@ if ($best >= $min_lines && $best_chars >= $min_chars) {
   if ($best_offset + $best <= $#curr) {
     @rest = @curr[$best_offset + $best .. $#curr];
   }
-  while (@rest && $rest[0] !~ /^(?:\s*›\s|\s*•\s|===== loglm start )/) {
-    shift @rest;
+  my @aligned = @rest;
+  my $boundary = -1;
+  for my $i (0 .. $#aligned) {
+    if ($aligned[$i] =~ /^(?:\s*›\s|\s*•\s|\s*❯\s|\s*⏺\s|===== loglm start |\s*\(status\)\s*$)/) {
+      $boundary = $i;
+      last;
+    }
+  }
+  if ($boundary > 0) {
+    @rest = @aligned[$boundary .. $#aligned];
   }
   while (@rest && $rest[0] eq q{}) {
     shift @rest;
