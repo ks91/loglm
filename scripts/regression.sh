@@ -206,6 +206,7 @@ run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-gemini-log-20260403-223849-p
 ! rg -q 'Shift\+Tab to accept edits' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should drop Gemini editor hint noise"
 ! rg -q 'workspace (/directory)' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should drop Gemini workspace header noise"
 ! rg -q 'Gemini CLI v0\.36\.0' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should drop repeated Gemini startup banner noise"
+! rg -q 'Thinking\.\.\.|Recapping the Steps Taken|Revisiting Prior Actions' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should drop Gemini spinner progress noise"
 rg -q '^> これまでは何をしてきたっけ。$' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should keep the final Gemini prompt text"
 rg -q '^✦ 要約します。$' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should keep Gemini response text"
 pass "decode Gemini v0.36 UI noise"

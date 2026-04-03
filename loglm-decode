@@ -342,7 +342,7 @@ if ($is_claude) {
       $line =~ /^\s*How it affects you: / ||
       $line =~ /^\s*Read more: https:\/\/goo\.gle\/geminicli-updates\s*$/ ||
       $line =~ /^[\x{2800}-\x{28FF}]\s+/u ||
-      $line =~ /^\S.*\(esc to cancel,\s*\d+s\)$/
+      $line =~ /^\s*[\x{2800}-\x{28FF}]?\s*(?:Thinking\.\.\.|Recapping .*|Revisiting .*|Planning .*|Analyzing .*)\s+\(esc to cancel,\s*\d+s\)(?:\s+.*)?$/u
     ) {
       next;
     }
