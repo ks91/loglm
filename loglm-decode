@@ -12,12 +12,15 @@ EOF
 
 Options:
   -o, --output <file>  Output file path (single input only)
+  --keep-overlap       Keep overlapping context instead of trimming it
   -h, --help           Show this help
 
 Behavior:
   - Positional arguments are always treated as input files.
   - Without -o, each input is written to "<input_basename>.decoded.txt".
     Example: logs/codex-log-20260217.txt -> logs/codex-log-20260217.decoded.txt
+  - By default, overlapping leading context shared with the previous log
+    in the same series is trimmed from the current decoded output.
 EOF
 }
 
@@ -34,7 +37,7 @@ derive_output_path() {
   fi
 }
 
-decode_one() {
+decode_raw_to_file() {
   local in_file="$1"
   local out_file="$2"
   local tmp_file
@@ -448,7 +451,160 @@ print STDOUT encode("UTF-8", $out);
   echo "decoded: $in_file -> $out_file"
 }
 
+find_previous_log_in_series() {
+  local in_file="$1"
+  local dir base prefix prev candidate candidate_base
+  dir="$(dirname "$in_file")"
+  base="$(basename "$in_file")"
+
+  if [[ ! "$base" =~ ^(loglm-[^-]+-log-).+\.txt$ ]]; then
+    return 1
+  fi
+  prefix="${BASH_REMATCH[1]}"
+
+  while IFS= read -r candidate; do
+    candidate_base="$(basename "$candidate")"
+    [[ "$candidate_base" == *.decoded.txt ]] && continue
+    [[ "$candidate_base" == "$base" ]] && continue
+    if [[ "$candidate_base" < "$base" ]]; then
+      prev="$candidate"
+    fi
+  done < <(find "$dir" -maxdepth 1 -type f -name "${prefix}*.txt" | LC_ALL=C sort)
+
+  [[ -n "${prev:-}" ]] || return 1
+  printf '%s\n' "$prev"
+}
+
+trim_overlap_with_previous() {
+  local in_file="$1"
+  local out_file="$2"
+  local prev_raw prev_decoded prev_tmp
+  local keep_overlap="${KEEP_OVERLAP:-0}"
+
+  [[ "$keep_overlap" -eq 0 ]] || return 0
+
+  if ! prev_raw="$(find_previous_log_in_series "$in_file")"; then
+    return 0
+  fi
+
+  prev_decoded="$(derive_output_path "$prev_raw")"
+  prev_tmp=""
+  if [[ ! -f "$prev_decoded" ]]; then
+    prev_tmp="$(/usr/bin/mktemp)"
+    decode_raw_to_file "$prev_raw" "$prev_tmp" > /dev/null
+    prev_decoded="$prev_tmp"
+  fi
+
+  LOGLM_DECODE_PREV_PATH="$prev_decoded" \
+  LOGLM_DECODE_MIN_OVERLAP_LINES="${LOGLM_DECODE_MIN_OVERLAP_LINES:-20}" \
+  LOGLM_DECODE_MIN_OVERLAP_CHARS="${LOGLM_DECODE_MIN_OVERLAP_CHARS:-400}" \
+  perl -0pi -e '
+use strict;
+use warnings;
+
+my $prev_path = $ENV{LOGLM_DECODE_PREV_PATH} // q{};
+my $min_lines = $ENV{LOGLM_DECODE_MIN_OVERLAP_LINES} // 20;
+my $min_chars = $ENV{LOGLM_DECODE_MIN_OVERLAP_CHARS} // 400;
+
+open my $pfh, "<:raw", $prev_path or die "open prev: $!";
+local $/;
+my $prev = <$pfh>;
+close $pfh;
+my $curr = $_;
+
+my @prev = split /\n/, $prev, -1;
+my @curr = split /\n/, $curr, -1;
+
+pop @prev while @prev && $prev[-1] eq q{};
+pop @curr while @curr && $curr[-1] eq q{};
+
+exit 0 if !@prev || !@curr;
+
+my $body_start = 0;
+for my $i (0 .. $#curr) {
+  next unless $curr[$i] =~ /^===== loglm start /;
+  $body_start = $i + 1;
+  $body_start++ while $body_start < @curr && $curr[$body_start] eq q{};
+  last;
+}
+
+my $best = 0;
+my $best_chars = 0;
+my $best_offset = -1;
+my $anchor = $min_lines;
+$anchor = @prev if $anchor > @prev;
+
+my %candidates = ();
+if ($anchor > 0) {
+  my %prev_pos = ();
+  for my $start (0 .. $#prev - $anchor + 1) {
+    my $needle = join("\n", @prev[$start .. $start + $anchor - 1]);
+    $prev_pos{$needle} = $start unless exists $prev_pos{$needle};
+  }
+  for my $offset ($body_start .. $#curr) {
+    my $remaining = @curr - $offset;
+    next if $remaining < $anchor;
+    my $slice = join("\n", @curr[$offset .. $offset + $anchor - 1]);
+    if (exists $prev_pos{$slice}) {
+      $candidates{$offset} = $prev_pos{$slice};
+    }
+  }
+}
+
+for my $offset (sort { $a <=> $b } keys %candidates) {
+  my $prev_start = $candidates{$offset};
+  my $remaining = @curr - $offset;
+  my $prev_remaining = @prev - $prev_start;
+  my $max = $prev_remaining < $remaining ? $prev_remaining : $remaining;
+  my $k = $anchor;
+  while ($k < $max && $prev[$prev_start + $k] eq $curr[$offset + $k]) {
+    $k++;
+  }
+  my $chars = 0;
+  for my $i (0 .. $k - 1) {
+    $chars += length($curr[$offset + $i]) + 1;
+  }
+  if ($k > $best || ($k == $best && $chars > $best_chars)) {
+    $best = $k;
+    $best_chars = $chars;
+    $best_offset = $offset;
+  }
+}
+
+if ($best >= $min_lines && $best_chars >= $min_chars) {
+  my @kept = ();
+  if ($body_start > 0) {
+    @kept = @curr[0 .. $body_start - 1];
+  }
+  my @rest = ();
+  if ($best_offset + $best <= $#curr) {
+    @rest = @curr[$best_offset + $best .. $#curr];
+  }
+  while (@rest && $rest[0] !~ /^(?:\s*›\s|\s*•\s|===== loglm start )/) {
+    shift @rest;
+  }
+  while (@rest && $rest[0] eq q{}) {
+    shift @rest;
+  }
+  @curr = (@kept, @rest);
+  $_ = join("\n", @curr);
+  $_ .= "\n" if length($_);
+}
+' "$out_file"
+
+  rm -f "$prev_tmp"
+}
+
+decode_one() {
+  local in_file="$1"
+  local out_file="$2"
+
+  decode_raw_to_file "$in_file" "$out_file"
+  trim_overlap_with_previous "$in_file" "$out_file"
+}
+
 output_path=""
+KEEP_OVERLAP=0
 inputs=()
 while (($# > 0)); do
   case "$1" in
@@ -463,6 +619,10 @@ while (($# > 0)); do
     -h|--help)
       usage
       exit 0
+      ;;
+    --keep-overlap)
+      KEEP_OVERLAP=1
+      shift
       ;;
     --)
       shift

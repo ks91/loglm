@@ -7,6 +7,10 @@ LOG_FILE="${TMPDIR:-/tmp}/loglm-regression-$(date +%Y%m%d-%H%M%S).log"
 RUN_E2E=0
 E2E_REPO="${E2E_REPO:-ks91/gamer-pat}"
 E2E_AGENT="${E2E_AGENT:-codex}"
+TMP_WORK=""
+NODE_TMP=""
+DECODE_TMP=""
+E2E_DIR=""
 
 usage() {
   cat <<'EOF'
@@ -88,6 +92,7 @@ printf 'loglm regression start: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')" | tee -a
 # 1) Syntax checks
 run_cmd bash -n \
   "$ROOT_DIR/loglm" \
+  "$ROOT_DIR/loglm-decode" \
   "$ROOT_DIR/install.sh" \
   "$ROOT_DIR/uninstall.sh" \
   "$ROOT_DIR/setup/install-node.sh" \
@@ -103,9 +108,50 @@ pass "help output"
 rg -q '^loglm [0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' /tmp/loglm-test-version.out || fail "version output format"
 pass "version output"
 
-# 3) install-node runtime behavior for missing NVM_DIR
+# 3) loglm-decode overlap trimming
+DECODE_TMP="$(/usr/bin/mktemp -d)"
+trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP"' EXIT
+cat > "$DECODE_TMP/loglm-codex-log-20260403-010000-pid1.txt" <<'EOF'
+===== loglm start [codex]: 2026-04-03 01:00:00 +0900 =====
+
+› old prompt
+• alpha
+• beta
+• gamma
+• delta
+• epsilon
+• zeta
+EOF
+cat > "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.txt" <<'EOF'
+===== loglm start [codex]: 2026-04-03 02:00:00 +0900 =====
+
+update banner
+another banner line
+
+› old prompt
+• alpha
+• beta
+• gamma
+• delta
+• epsilon
+• zeta
+› new prompt
+• eta
+• theta
+EOF
+
+run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-codex-log-20260403-010000-pid1.txt"
+run_cmd env LOGLM_DECODE_MIN_OVERLAP_LINES=4 LOGLM_DECODE_MIN_OVERLAP_CHARS=10 \
+  "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.txt"
+sed -n '1,6p' "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.decoded.txt" > /tmp/loglm-test-decode-prefix.out
+rg -q '^===== loglm start \[codex\]:' /tmp/loglm-test-decode-prefix.out || fail "decode overlap trimming should preserve log start header"
+rg -q '^› new prompt$' "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.decoded.txt" || fail "decode overlap trimming should align to a new message boundary"
+! rg -q '^› old prompt$' "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.decoded.txt" || fail "decode overlap trimming should drop repeated leading context"
+pass "decode overlap trimming"
+
+# 4) install-node runtime behavior for missing NVM_DIR
 NODE_TMP="$(/usr/bin/mktemp -d)"
-trap 'rm -rf "$TMP_WORK" "$NODE_TMP"' EXIT
+trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP"' EXIT
 mkdir -p "$NODE_TMP/home" "$NODE_TMP/bin"
 
 cat > "$NODE_TMP/bin/curl" <<'EOF'
@@ -149,7 +195,7 @@ run_cmd env \
 [[ -f "$NODE_TMP/home/custom-nvm/nvm.sh" ]] || fail "install-node should create nvm.sh in NVM_DIR"
 pass "install-node handles missing NVM_DIR"
 
-# 4) Existing option conflict behavior
+# 5) Existing option conflict behavior
 set +e
 "$ROOT_DIR/loglm" --new --resume > /tmp/loglm-test-conflict.out 2> /tmp/loglm-test-conflict.err
 st=$?
@@ -158,7 +204,7 @@ assert_exit_code 2 "$st" "--new/--resume conflict"
 rg -q "cannot be used together" /tmp/loglm-test-conflict.err || fail "missing conflict message"
 pass "option conflict check"
 
-# 5) Invalid repo validation
+# 6) Invalid repo validation
 set +e
 LOGLM_AGENT_INSTALL_NO_LAUNCH=1 LOGLM_CODING_AGENT=codex "$ROOT_DIR/loglm" agent install not-a-repo > /tmp/loglm-test-invalid.out 2> /tmp/loglm-test-invalid.err
 st=$?
@@ -167,9 +213,9 @@ assert_exit_code 2 "$st" "invalid repo validation"
 rg -q "Invalid source spec" /tmp/loglm-test-invalid.err || fail "missing invalid source message"
 pass "invalid repo check"
 
-# 6) Managed block list/remove behavior
+# 7) Managed block list/remove behavior
 TMP_WORK="$(/usr/bin/mktemp -d)"
-trap 'rm -rf "$TMP_WORK" "$NODE_TMP"' EXIT
+trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP"' EXIT
 cd "$TMP_WORK"
 
 cat > AGENTS.md <<'EOF'
@@ -200,7 +246,7 @@ pass "agent remove removes only target block"
 rg -q "No installed prompt agents found" /tmp/loglm-test-list2.out || fail "agent list should be empty after remove"
 pass "agent list empty after remove"
 
-# 7) Local repository install behavior
+# 8) Local repository install behavior
 LOCAL_REPO="$TMP_WORK/local-agent-src"
 mkdir -p "$LOCAL_REPO"
 cat > "$LOCAL_REPO/AGENT_INSTALL.md" <<'EOF'
@@ -221,7 +267,7 @@ pass "local source install works"
 rg -q "prompt_agent_version: 9.9.9" /tmp/loglm-test-list-verbose.out || fail "verbose list should show prompt-agent version"
 pass "agent list --verbose shows prompt-agent version"
 
-# 8) Update validation
+# 9) Update validation
 set +e
 "$ROOT_DIR/loglm" agent update > /tmp/loglm-test-update-empty.out 2> /tmp/loglm-test-update-empty.err
 st=$?
@@ -234,9 +280,9 @@ run_cmd "$ROOT_DIR/loglm" agent update --all
 pass "agent update --all on empty set"
 
 if [[ "$RUN_E2E" -eq 1 ]]; then
-  # 9) Network E2E: install/list/update/remove cycle against real GitHub repo
+  # 10) Network E2E: install/list/update/remove cycle against real GitHub repo
   E2E_DIR="$(/usr/bin/mktemp -d)"
-  trap 'rm -rf "$TMP_WORK" "$E2E_DIR"' EXIT
+  trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP" "$E2E_DIR"' EXIT
   cd "$E2E_DIR"
 
   run_cmd env LOGLM_AGENT_INSTALL_NO_LAUNCH=1 LOGLM_CODING_AGENT=codex "$ROOT_DIR/loglm" agent install "$E2E_REPO" --agent "$E2E_AGENT"
