@@ -178,62 +178,47 @@ pass "decode overlap trimming for Claude-style prompts"
 
 cat > "$DECODE_TMP/sample.decoded.txt" <<'EOF'
 Contact: ks91@example.com
-Path: /Volumes/ks91home/ks91/project
+Name: Kenji Saito
 Greeting: Welcome back Kenji!
-Date: 2026-04-03
-Timestamp: 2026-03-05 23
-Compact: 20260306-021406
+Colleague: Natsume Soseki
 EOF
-
-printf 'y\nn\ny\n' | "$ROOT_DIR/loglm-decode" --review-pii "$DECODE_TMP/sample.decoded.txt" > /tmp/loglm-test-pii-review.out 2> /tmp/loglm-test-pii-review.err
-[[ -f "$DECODE_TMP/sample.redacted.txt" ]] || fail "pii review should create .redacted.txt from decoded input"
-rg -q 'line 1: Contact: ks91@example.com' /tmp/loglm-test-pii-review.out || fail "pii review should show line context for candidates"
-rg -q '\*\*\*' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should replace accepted candidates"
-! rg -q 'ks91@example.com' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should redact accepted email candidates"
-! rg -q '/Volumes/ks91home/ks91' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should redact accepted user-path candidates"
-rg -q 'Welcome back Kenji!' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should keep rejected candidates unchanged"
-rg -q 'Date: 2026-04-03' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should not treat dates as phone candidates"
-rg -q 'Timestamp: 2026-03-05 23' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should not treat timestamps as phone candidates"
-rg -q 'Compact: 20260306-021406' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should not treat compact timestamps as phone candidates"
-! rg -q 'phone .*2026-04-03' /tmp/loglm-test-pii-review.out || fail "pii review should not list dates as phone candidates"
-! rg -q 'phone .*2026-03-05 23' /tmp/loglm-test-pii-review.out || fail "pii review should not list timestamps as phone candidates"
-! rg -q 'phone .*20260306-021406' /tmp/loglm-test-pii-review.out || fail "pii review should not list compact timestamps as phone candidates"
-pass "pii review on decoded input"
-
-printf 'e\n[NAME]\n' | "$ROOT_DIR/loglm-decode" --review-pii "$DECODE_TMP/sample.redacted.txt" > /tmp/loglm-test-pii-reredact.out 2> /tmp/loglm-test-pii-reredact.err
-rg -q 'Welcome back \[NAME\]!' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should allow in-place re-review on redacted input"
-pass "pii review on redacted input"
-
-cat > "$DECODE_TMP/jp.decoded.txt" <<'EOF'
-氏名: 斉藤賢爾
-所属: 早稲田大学
-EOF
-cat > "$DECODE_TMP/pii-list.txt" <<'EOF'
-# literal pii candidates
-斉藤賢爾
+cat > "$DECODE_TMP/pii-candidates.txt" <<'EOF'
+# first person
+Kenji Saito
+Kenji
+Saito
 ks91
+ks91@example.com
+
+# second person
+Natsume Soseki
+Natsume
+Soseki
 EOF
 
-printf 'y\n' | "$ROOT_DIR/loglm-decode" --review-pii --pii-list "$DECODE_TMP/pii-list.txt" "$DECODE_TMP/jp.decoded.txt" > /tmp/loglm-test-pii-list.out 2> /tmp/loglm-test-pii-list.err
-rg -q '\[1/1\] pii_list \(1 hit\): 斉藤賢爾' /tmp/loglm-test-pii-list.out || fail "pii review should include external list candidates"
-rg -q 'line 1: 氏名: 斉藤賢爾' /tmp/loglm-test-pii-list.out || fail "pii review should show UTF-8 context for external list candidates"
-rg -q '氏名: \*\*\*' "$DECODE_TMP/jp.redacted.txt" || fail "pii review should replace accepted external list candidates"
-pass "pii review with external candidate list"
-
-printf 'y\n' | "$ROOT_DIR/loglm-decode" --review-pii --pii-list-only --pii-list "$DECODE_TMP/pii-list.txt" "$DECODE_TMP/jp.decoded.txt" > /tmp/loglm-test-pii-list-only.out 2> /tmp/loglm-test-pii-list-only.err
-rg -q '\[1/1\] pii_list \(1 hit\): 斉藤賢爾' /tmp/loglm-test-pii-list-only.out || fail "pii-list-only should review external list candidates"
-! rg -Fq 'email (' /tmp/loglm-test-pii-list-only.out || fail "pii-list-only should skip automatic candidate detection"
-pass "pii review with external candidate list only"
+printf 'y\ny\n' | "$ROOT_DIR/loglm-decode" --review-pii "$DECODE_TMP/pii-candidates.txt" "$DECODE_TMP/sample.decoded.txt" > /tmp/loglm-test-pii-review.out 2> /tmp/loglm-test-pii-review.err
+[[ -f "$DECODE_TMP/sample.redacted.txt" ]] || fail "pii review should create .redacted.txt from decoded input"
+rg -Fq '[1/2] pii_group (6 hits): ***1*' /tmp/loglm-test-pii-review.out || fail "pii review should number the first candidate group"
+rg -Fq '[2/2] pii_group (3 hits): ***2*' /tmp/loglm-test-pii-review.out || fail "pii review should number the second candidate group"
+rg -Fq 'aliases: ks91@example.com,Kenji Saito,Kenji,Saito,ks91' /tmp/loglm-test-pii-review.out || fail "pii review should show group aliases"
+rg -q 'line 1: Contact: ks91@example.com' /tmp/loglm-test-pii-review.out || fail "pii review should show line context for first match"
+rg -q 'Contact: \*\*\*1\*' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should replace first-group identifiers with ***1*"
+rg -q 'Name: \*\*\*1\*' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should replace full names with ***1*"
+rg -q 'Greeting: Welcome back \*\*\*1\*!' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should replace given-name aliases with ***1*"
+rg -q 'Colleague: \*\*\*2\*' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should replace second-group identifiers with ***2*"
+pass "pii review on grouped candidate input"
 
 cat > "$DECODE_TMP/bulk.decoded.txt" <<'EOF'
-氏名: 斉藤賢爾
-ID: ks91
+Lead: Kenji Saito
+Login: ks91
+Partner: Natsume Soseki
 EOF
 
-"$ROOT_DIR/loglm-decode" --review-pii --replace-all --pii-list-only --pii-list "$DECODE_TMP/pii-list.txt" "$DECODE_TMP/bulk.decoded.txt" > /tmp/loglm-test-pii-replace-all.out 2> /tmp/loglm-test-pii-replace-all.err
-rg -q '氏名: \*\*\*' "$DECODE_TMP/bulk.redacted.txt" || fail "replace-all should redact list candidates without prompting"
-rg -q 'ID: \*\*\*' "$DECODE_TMP/bulk.redacted.txt" || fail "replace-all should redact every matched list candidate"
-pass "pii replace-all with external candidate list"
+"$ROOT_DIR/loglm-decode" --review-pii --replace-all "$DECODE_TMP/pii-candidates.txt" "$DECODE_TMP/bulk.decoded.txt" > /tmp/loglm-test-pii-replace-all.out 2> /tmp/loglm-test-pii-replace-all.err
+rg -q 'Lead: \*\*\*1\*' "$DECODE_TMP/bulk.redacted.txt" || fail "replace-all should redact first-group candidates without prompting"
+rg -q 'Login: \*\*\*1\*' "$DECODE_TMP/bulk.redacted.txt" || fail "replace-all should redact every matched alias in a group"
+rg -q 'Partner: \*\*\*2\*' "$DECODE_TMP/bulk.redacted.txt" || fail "replace-all should redact second-group candidates without prompting"
+pass "pii replace-all on grouped candidate input"
 
 # 4) install-node runtime behavior for missing NVM_DIR
 NODE_TMP="$(/usr/bin/mktemp -d)"

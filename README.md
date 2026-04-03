@@ -199,10 +199,10 @@ You can decode multiple files with shell globbing, for example:
 loglm-decode logs/loglm-codex-log-20260307-*.txt
 ```
 
-Review and redact PII-like strings interactively:
+Review and redact grouped PII candidates interactively:
 
 ```bash
-loglm-decode --review-pii logs/*.decoded.txt
+loglm-decode --review-pii examples/pii-candidates.txt logs/*.decoded.txt
 ```
 
 This writes:
@@ -215,30 +215,13 @@ Behavior:
 - `--review-pii` never edits raw log files
 - if the input is already `*.redacted.txt`, it is reviewed in place
 - candidates show their first matching line number and line text for review
-
-You can also add literal candidates from a file:
-
-```bash
-loglm-decode --review-pii --pii-list examples/pii-candidates.txt logs/*.decoded.txt
-```
-
-Rules for `--pii-list`:
-
-- one literal string per line
-- empty lines are ignored
-- lines beginning with `#` are treated as comments
-
-For large logs, if you want to review only the supplied literal candidates and
-skip automatic detection, use:
-
-```bash
-loglm-decode --review-pii --pii-list-only --pii-list examples/pii-candidates.txt logs/*.decoded.txt
-```
+- the candidate list is grouped by blank lines
+- each group is replaced with a numbered token such as `***1*`, `***2*`
 
 For bulk redaction without interactive prompts:
 
 ```bash
-loglm-decode --review-pii --replace-all --pii-list-only --pii-list examples/pii-candidates.txt logs/*.decoded.txt
+loglm-decode --review-pii --replace-all examples/pii-candidates.txt logs/*.decoded.txt
 ```
 
 ## Dev Install (Branch)

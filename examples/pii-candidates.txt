@@ -1,5 +1,7 @@
-# Example PII candidate list for loglm-decode --pii-list
-# One literal candidate per line.
+# Example grouped PII candidate list for:
+#   loglm-decode --review-pii examples/pii-candidates.txt logs/*.decoded.txt
+# Empty lines separate person/entity groups.
+# Each non-empty line in a group is treated as an alias of the same person/entity.
 # Lines beginning with # are ignored.
 
 斉藤賢爾
@@ -9,3 +11,7 @@ Kenji Saito
 Kenji
 Saito
 ks91
+
+Natsume Soseki
+Natsume
+Soseki

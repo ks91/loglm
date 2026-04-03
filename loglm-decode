@@ -13,11 +13,8 @@ EOF
 Options:
   -o, --output <file>  Output file path (single input only)
   --keep-overlap       Keep overlapping context instead of trimming it
-  --review-pii         Review and optionally replace PII-like candidates
-  --pii-list <file>    Add review candidates from a newline-delimited list
-  --pii-list-only      Review only candidates from --pii-list
+  --review-pii         Review and redact using a grouped PII candidate list
   --replace-all        Replace all matched candidates without prompting
-  --replacement <text> Default replacement text for accepted candidates
   -h, --help           Show this help
 
 Behavior:
@@ -26,11 +23,12 @@ Behavior:
     Example: logs/codex-log-20260217.txt -> logs/codex-log-20260217.decoded.txt
   - By default, overlapping leading context shared with the previous log
     in the same series is trimmed from the current decoded output.
-  - With --review-pii, decoded output is scanned for PII-like candidates and
-    each candidate is reviewed interactively before replacement.
-  - --pii-list lines are treated as literal strings to review and replace.
-  - --pii-list-only skips automatic candidate detection.
-  - --replace-all applies the replacement to every candidate without prompts.
+  - With --review-pii, the first positional argument is a grouped
+    pii-candidates.txt file and the remaining positional arguments are logs.
+  - Empty lines in pii-candidates.txt separate person/entity groups.
+  - Each group is replaced with a numbered token: ***1*, ***2*, ...
+  - --replace-all applies the numbered replacement to every matched group
+    without prompts.
 EOF
 }
 
@@ -725,57 +723,98 @@ s/$quoted/$replacement/g;
 ' "$file"
 }
 
-merge_pii_list_candidates() {
+list_grouped_pii_candidates() {
   local out_file="$1"
   local pii_list_file="$2"
-  local line first_match
-
   [[ -f "$pii_list_file" ]] || {
     echo "error: pii list file not found: $pii_list_file" >&2
     exit 1
   }
 
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ -n "$line" ]] || continue
-    [[ "$line" == \#* ]] && continue
-    first_match="$(grep -n -F -m 1 -- "$line" "$out_file" || true)"
-    if [[ -n "$first_match" ]]; then
-      printf 'pii_list\t1\t%s\t%s\t%s\n' \
-        "$line" \
-        "${first_match%%:*}" \
-        "${first_match#*:}"
-    fi
-  done < "$pii_list_file"
+  OUT_FILE="$out_file" PII_LIST_FILE="$pii_list_file" perl -CS -e '
+use strict;
+use warnings;
+use Encode qw(decode FB_DEFAULT);
+
+binmode(STDOUT, ":encoding(UTF-8)");
+
+my $out_file = $ENV{OUT_FILE} // q{};
+my $pii_list_file = $ENV{PII_LIST_FILE} // q{};
+
+open my $fh, "<:raw", $out_file or die "open out_file: $!";
+my @lines = map { decode("UTF-8", $_, FB_DEFAULT) } <$fh>;
+close $fh;
+
+open my $pfh, "<:raw", $pii_list_file or die "open pii_list_file: $!";
+my @raw_groups;
+my @current;
+while (my $raw = <$pfh>) {
+  my $line = decode("UTF-8", $raw, FB_DEFAULT);
+  chomp $line;
+  $line =~ s/\r$//;
+  if ($line =~ /^\s*#/) {
+    next;
+  }
+  if ($line =~ /^\s*$/) {
+    if (@current) {
+      push @raw_groups, [@current];
+      @current = ();
+    }
+    next;
+  }
+  push @current, $line;
+}
+push @raw_groups, [@current] if @current;
+close $pfh;
+
+my %seen_value;
+for my $gidx (0 .. $#raw_groups) {
+  my @unique = grep { !$seen_value{$_}++ } @{ $raw_groups[$gidx] };
+  @unique = sort { length($b) <=> length($a) || $a cmp $b } @unique;
+  my $token = sprintf("***%d*", $gidx + 1);
+  my ($first_line_no, $first_line_text, $hits) = (undef, undef, 0);
+  for my $candidate (@unique) {
+    for my $i (0 .. $#lines) {
+      if (index($lines[$i], $candidate) >= 0) {
+        $hits++;
+        if (!defined $first_line_no) {
+          $first_line_no = $i + 1;
+          (my $copy = $lines[$i]) =~ s/\r?\n$//;
+          $first_line_text = $copy;
+        }
+      }
+    }
+  }
+  next if !$hits;
+  my $joined = join("\x1f", @unique);
+  print join("\t", "pii_group", $hits, $token, ($first_line_no // q{}), ($first_line_text // q{}), $joined), "\n";
+}
+' 
+}
+
+replace_group_in_file() {
+  local file="$1"
+  local replacement="$2"
+  shift 2
+  local values=("$@")
+  local value
+  for value in "${values[@]}"; do
+    replace_literal_in_file "$file" "$value" "$replacement"
+  done
 }
 
 review_pii_candidates() {
   local out_file="$1"
-  local default_replacement="$2"
-  local pii_list_file="${3:-}"
-  local pii_list_only="${4:-0}"
-  local replace_all="${5:-0}"
-  local line reason count value line_no line_text answer custom total index
+  local pii_list_file="$2"
+  local replace_all="${3:-0}"
+  local line reason count replacement line_no line_text group_values answer total index
+  local -a values
   local -a candidates
 
-  if [[ "$pii_list_only" -eq 0 ]]; then
-    while IFS= read -r line; do
-      [[ -n "$line" ]] || continue
-      candidates+=("$line")
-    done < <(list_pii_candidates "$out_file")
-  fi
-
-  if [[ -n "$pii_list_file" ]]; then
-    local existing_values
-    existing_values="$(printf '%s\n' "${candidates[@]}" | awk -F'\t' '{print $3}' || true)"
-    while IFS= read -r line; do
-      [[ -n "$line" ]] || continue
-      IFS=$'\t' read -r reason count value line_no line_text <<< "$line"
-      if [[ -n "$existing_values" ]] && printf '%s\n' "$existing_values" | grep -Fqx -- "$value"; then
-        continue
-      fi
-      candidates+=("$line")
-    done < <(merge_pii_list_candidates "$out_file" "$pii_list_file")
-  fi
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    candidates+=("$line")
+  done < <(list_grouped_pii_candidates "$out_file" "$pii_list_file")
 
   total="${#candidates[@]}"
   if ((total == 0)); then
@@ -787,30 +826,26 @@ review_pii_candidates() {
   index=0
   for line in "${candidates[@]}"; do
     index=$((index + 1))
-    IFS=$'\t' read -r reason count value line_no line_text <<< "$line"
+    IFS=$'\t' read -r reason count replacement line_no line_text group_values <<< "$line"
+    IFS=$'\x1f' read -r -a values <<< "$group_values"
     printf '[%d/%d] %s (%s hit%s): %s\n' \
       "$index" "$total" "$reason" "$count" \
       "$([[ "$count" == "1" ]] && printf '' || printf 's')" \
-      "$value"
+      "$replacement"
     if [[ -n "${line_no:-}" && -n "${line_text:-}" ]]; then
       printf '        line %s: %s\n' "$line_no" "$line_text"
     fi
+    printf '        aliases: %s\n' "$(IFS=', '; printf '%s' "${values[*]}")"
     if [[ "$replace_all" -eq 1 ]]; then
-      replace_literal_in_file "$out_file" "$value" "$default_replacement"
+      replace_group_in_file "$out_file" "$replacement" "${values[@]}"
       continue
     fi
     while true; do
-      printf 'Replace with "%s"? [y/N/e/q] ' "$default_replacement" >&2
+      printf 'Replace with "%s"? [y/N/q] ' "$replacement" >&2
       IFS= read -r answer || answer="q"
       case "$answer" in
         y|Y|yes|YES)
-          replace_literal_in_file "$out_file" "$value" "$default_replacement"
-          break
-          ;;
-        e|E|edit|EDIT)
-          printf 'Replacement text: ' >&2
-          IFS= read -r custom || custom=""
-          replace_literal_in_file "$out_file" "$value" "$custom"
+          replace_group_in_file "$out_file" "$replacement" "${values[@]}"
           break
           ;;
         q|Q|quit|QUIT)
@@ -821,7 +856,7 @@ review_pii_candidates() {
           break
           ;;
         *)
-          echo "Please answer y, n, e, or q." >&2
+          echo "Please answer y, n, or q." >&2
           ;;
       esac
     done
@@ -831,10 +866,7 @@ review_pii_candidates() {
 output_path=""
 KEEP_OVERLAP=0
 REVIEW_PII=0
-PII_LIST_FILE=""
-PII_LIST_ONLY=0
 REPLACE_ALL=0
-DEFAULT_REPLACEMENT="***"
 inputs=()
 while (($# > 0)); do
   case "$1" in
@@ -858,29 +890,9 @@ while (($# > 0)); do
       REVIEW_PII=1
       shift
       ;;
-    --pii-list)
-      if (($# < 2)); then
-        echo "error: missing value for $1" >&2
-        exit 2
-      fi
-      PII_LIST_FILE="$2"
-      shift 2
-      ;;
-    --pii-list-only)
-      PII_LIST_ONLY=1
-      shift
-      ;;
     --replace-all)
       REPLACE_ALL=1
       shift
-      ;;
-    --replacement)
-      if (($# < 2)); then
-        echo "error: missing value for $1" >&2
-        exit 2
-      fi
-      DEFAULT_REPLACEMENT="$2"
-      shift 2
       ;;
     --)
       shift
@@ -922,6 +934,16 @@ fi
 
 inputs=("${filtered_inputs[@]}")
 
+PII_LIST_INPUT=""
+if [[ "$REVIEW_PII" -eq 1 ]]; then
+  if ((${#inputs[@]} < 2)); then
+    echo "error: --review-pii requires a pii-candidates.txt file followed by at least one input log." >&2
+    exit 2
+  fi
+  PII_LIST_INPUT="${inputs[0]}"
+  inputs=("${inputs[@]:1}")
+fi
+
 if [[ -n "$output_path" && ${#inputs[@]} -ne 1 ]]; then
   echo "error: --output can be used only with a single input file." >&2
   exit 2
@@ -945,7 +967,7 @@ done
       decode_one "${inputs[0]}" "$output_path"
     fi
     if [[ "$REVIEW_PII" -eq 1 ]]; then
-      review_pii_candidates "$output_path" "$DEFAULT_REPLACEMENT" "$PII_LIST_FILE" "$PII_LIST_ONLY" "$REPLACE_ALL"
+      review_pii_candidates "$output_path" "$PII_LIST_INPUT" "$REPLACE_ALL"
     fi
   exit 0
 fi
@@ -970,6 +992,6 @@ for in_file in "${inputs[@]}"; do
     decode_one "$in_file" "$out_file"
   fi
   if [[ "$REVIEW_PII" -eq 1 ]]; then
-    review_pii_candidates "$out_file" "$DEFAULT_REPLACEMENT" "$PII_LIST_FILE" "$PII_LIST_ONLY" "$REPLACE_ALL"
+    review_pii_candidates "$out_file" "$PII_LIST_INPUT" "$REPLACE_ALL"
   fi
 done

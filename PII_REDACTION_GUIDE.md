@@ -15,7 +15,9 @@ Create `*.redacted.txt` files from `loglm` logs while preserving the original ra
 
 1. Prepare a `pii-candidates.txt` file.
    - Add as many likely personal identifiers as you can think of.
-   - Include full names, surnames, given names, usernames, email addresses, and other literal identifiers.
+   - Use one group per person or entity.
+   - Separate groups with a blank line.
+   - Within each group, list full names, surnames, given names, usernames, email addresses, and other literal identifiers.
 
 2. Decode the raw logs.
 
@@ -32,9 +34,7 @@ rm logs/*.redacted.txt
 4. Generate redacted logs from the decoded logs.
 
 ```bash
-loglm-decode --review-pii --replace-all --pii-list-only \
-  --pii-list pii-candidates.txt \
-  logs/*.decoded.txt
+loglm-decode --review-pii --replace-all pii-candidates.txt logs/*.decoded.txt
 ```
 
 5. Ask an LLM to inspect the resulting `*.redacted.txt` files.
@@ -57,12 +57,13 @@ zip redacted-logs.zip logs/*.redacted.txt
 - Raw `*.txt` and decoded `*.decoded.txt` files are preserved.
 - `*.redacted.txt` files are the working copies for redaction.
 - If a `*.redacted.txt` file is reviewed again, it is updated in place.
-- For large logs, `--pii-list-only` is recommended because it skips automatic candidate detection.
+- Each group is replaced with a numbered token such as `***1*`, `***2*`, and so on.
+- This keeps person-to-person relationships readable after redaction.
 
 ### Candidate List Format
 
 - One literal string per line
-- Empty lines are ignored
+- Empty lines separate groups
 - Lines beginning with `#` are treated as comments
 
 Example:
@@ -74,6 +75,10 @@ Kenji
 Saito
 ks91
 ks91@waseda.jp
+
+Natsume Soseki
+Natsume
+Soseki
 ```
 
 ## 日本語
@@ -86,7 +91,9 @@ ks91@waseda.jp
 
 1. `pii-candidates.txt` を用意する。
    - 思いつく限りの個人情報文字列を入れる。
-   - フルネーム、姓、名、ユーザー名、メールアドレスなどの文字列を含める。
+   - 1人または1主体を1グループとして書く。
+   - グループ同士は空行で区切る。
+   - 各グループには、フルネーム、姓、名、ユーザー名、メールアドレスなどの文字列を含める。
 
 2. まず raw ログを decoded にする。
 
@@ -103,9 +110,7 @@ rm logs/*.redacted.txt
 4. `*.decoded.txt` から `*.redacted.txt` を作る。
 
 ```bash
-loglm-decode --review-pii --replace-all --pii-list-only \
-  --pii-list pii-candidates.txt \
-  logs/*.decoded.txt
+loglm-decode --review-pii --replace-all pii-candidates.txt logs/*.decoded.txt
 ```
 
 5. 生成された `*.redacted.txt` を LLM に見てもらう。
@@ -128,12 +133,13 @@ zip redacted-logs.zip logs/*.redacted.txt
 - raw の `*.txt` と decoded の `*.decoded.txt` は保持される。
 - 個人情報除去の作業対象は `*.redacted.txt` である。
 - `*.redacted.txt` に対して再度 `--review-pii` を実行した場合、そのファイルを上書き更新する。
-- 巨大ログでは、自動候補抽出をスキップする `--pii-list-only` の利用を推奨する。
+- 各グループは `***1*`, `***2*` のような番号付きトークンに置換される。
+- これにより、個人を隠しつつ人物間の関係を読み取りやすくできる。
 
 ### 候補リストの書式
 
 - 1 行に 1 文字列
-- 空行は無視される
+- 空行はグループの区切り
 - `#` で始まる行はコメントとして扱われる
 
 例:
@@ -145,4 +151,9 @@ zip redacted-logs.zip logs/*.redacted.txt
 賢爾
 ks91
 ks91@waseda.jp
+
+夏目漱石
+Natsume Soseki
+Natsume
+Soseki
 ```
