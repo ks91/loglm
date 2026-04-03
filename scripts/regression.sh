@@ -176,6 +176,40 @@ rg -q '^❯ new prompt$' "$DECODE_TMP/loglm-claude-log-20260403-040000-pid4.deco
 ! rg -q '^❯ old prompt$' "$DECODE_TMP/loglm-claude-log-20260403-040000-pid4.decoded.txt" || fail "decode overlap trimming should drop repeated Claude-style leading context"
 pass "decode overlap trimming for Claude-style prompts"
 
+cat > "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.txt" <<'EOF'
+===== loglm start [gemini]: 2026-04-03 22:38:49 +0900 =====
+ ▝▜▄    Gemini CLI v0.36.0
+   ▗▟▀  Signed in with Google: ks91020@gmail.com /auth
+ ▗▟▀    Plan: Gemini Code Assist in Google One AI Pro /upgrade
+We're making changes to Gemini CLI that may impact your workflow.
+What's Changing: We are adding more robust detection of policy-violating use
+How it affects you: This may result in higher capacity-related errors.
+Read more: https://goo.gle/geminicli-updates
+                                                                ? for shortcuts
+ Shift+Tab to accept edits
+ >   Type your message or @path/to/file
+ workspace (/directory)                   sandbox                        /model
+ ~/Programs/test/loglm-gemini             no sandbox            Auto (Gemini 3)
+ > これまでは
+ workspace (/directory)                   sandbox                        /model
+ ~/Programs/test/loglm-gemini             no sandbox            Auto (Gemini 3)
+ Shift+Tab to accept edits
+ > これまでは何を
+ workspace (/directory)                   sandbox                        /model
+ ~/Programs/test/loglm-gemini             no sandbox            Auto (Gemini 3)
+ Shift+Tab to accept edits
+ > これまでは何をしてきたっけ。
+✦ 要約します。
+EOF
+
+run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.txt"
+! rg -q 'Shift\+Tab to accept edits' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should drop Gemini editor hint noise"
+! rg -q 'workspace (/directory)' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should drop Gemini workspace header noise"
+! rg -q 'Gemini CLI v0\.36\.0' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should drop repeated Gemini startup banner noise"
+rg -q '^> これまでは何をしてきたっけ。$' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should keep the final Gemini prompt text"
+rg -q '^✦ 要約します。$' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should keep Gemini response text"
+pass "decode Gemini v0.36 UI noise"
+
 cat > "$DECODE_TMP/sample.decoded.txt" <<'EOF'
 Contact: ks91@example.com
 Name: Kenji Saito

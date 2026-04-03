@@ -293,6 +293,7 @@ if ($is_claude) {
   my @normalized = ();
   my $pending_prompt;
   my $last_emitted_prompt;
+  my $in_notice_block = 0;
 
   for my $raw (@lines) {
     my $line = $raw;
@@ -309,6 +310,16 @@ if ($is_claude) {
       $line =~ s/\s+$//;
     }
 
+    if ($in_notice_block) {
+      $in_notice_block = 0 if $line =~ /^\s*Read more: https:\/\/goo\.gle\/geminicli-updates\s*$/;
+      next;
+    }
+
+    if ($line =~ /^\s*We.re making changes to Gemini CLI that may impact your workflow\.\s*$/) {
+      $in_notice_block = 1;
+      next;
+    }
+
     # Drop frequent transient UI lines.
     if (
       $line eq q{} ||
@@ -319,18 +330,29 @@ if ($is_claude) {
       $line =~ /^no sandbox \(see \/docs\)$/ ||
       $line =~ /no sandbox \(see \/docs\)/ ||
       $line =~ /^gemini-[[:alnum:]._-]+ \(\d+% context left\)$/ ||
+      $line =~ /^\s*(?:[\x{2580}-\x{259F}\x{2800}-\x{28FF}]+\s+)?Gemini CLI v[0-9.]+\s*$/u ||
+      $line =~ m{^\s*(?:[\x{2580}-\x{259F}\x{2800}-\x{28FF}]+\s+)?Signed in with Google: .* /auth\s*$}u ||
+      $line =~ m{^\s*(?:[\x{2580}-\x{259F}\x{2800}-\x{28FF}]+\s+)?Plan: .* /upgrade\s*$}u ||
+      $line =~ m{^\s*workspace \(/directory\)\s+sandbox\s+/model\s*$} ||
+      $line =~ m{^\s*~/.*\s+no sandbox\s+Auto \(Gemini 3\)\s*$} ||
+      $line =~ /^\s*Shift\+Tab to accept edits\s*$/i ||
+      $line =~ /^\s*\? for shortcuts\s*$/i ||
+      $line =~ m{^\s*>\s*Type your message or \@path/to/file\s*$} ||
+      $line =~ /^\s*What.s Changing: / ||
+      $line =~ /^\s*How it affects you: / ||
+      $line =~ /^\s*Read more: https:\/\/goo\.gle\/geminicli-updates\s*$/ ||
       $line =~ /^[\x{2800}-\x{28FF}]\s+/u ||
-      $line =~ /^\S.*\(esc to cancel,\s*\d+s\)$/ ||
-      $line =~ /^>\s*Type your message or \@path\/to\/file$/
+      $line =~ /^\S.*\(esc to cancel,\s*\d+s\)$/
     ) {
       next;
     }
 
     # Merge staircase-style prompt redraws into one line.
-    if ($line =~ /^>\s*(.*)$/) {
+    if ($line =~ /^\s*>\s*(.*)$/) {
       my $p = $1;
       $p =~ s/^\s+//;
       $p =~ s/\s+$//;
+      next if $p eq q{};
       if (!defined $pending_prompt) {
         $pending_prompt = $p;
         next;
@@ -353,6 +375,7 @@ if ($is_claude) {
     }
 
     if (defined $pending_prompt) {
+      next if $line =~ m{^\s*workspace \(/directory\)\s+sandbox\s+/model\s*$};
       if ($line eq $pending_prompt) {
         next;
       }
