@@ -227,6 +227,19 @@ Rules for `--pii-list`:
 - empty lines are ignored
 - lines beginning with `#` are treated as comments
 
+For large logs, if you want to review only the supplied literal candidates and
+skip automatic detection, use:
+
+```bash
+loglm-decode --review-pii --pii-list-only --pii-list examples/pii-candidates.txt logs/*.decoded.txt
+```
+
+For bulk redaction without interactive prompts:
+
+```bash
+loglm-decode --review-pii --replace-all --pii-list-only --pii-list examples/pii-candidates.txt logs/*.decoded.txt
+```
+
 ## Dev Install (Branch)
 
 For development testing, install from the current branch without editing `REPO_RAW_BASE` manually:

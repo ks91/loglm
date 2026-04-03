@@ -205,19 +205,35 @@ rg -q 'Welcome back \[NAME\]!' "$DECODE_TMP/sample.redacted.txt" || fail "pii re
 pass "pii review on redacted input"
 
 cat > "$DECODE_TMP/jp.decoded.txt" <<'EOF'
-氏名: 斎藤健二
+氏名: 斉藤賢爾
 所属: 早稲田大学
 EOF
 cat > "$DECODE_TMP/pii-list.txt" <<'EOF'
 # literal pii candidates
-斎藤健二
+斉藤賢爾
+ks91
 EOF
 
 printf 'y\n' | "$ROOT_DIR/loglm-decode" --review-pii --pii-list "$DECODE_TMP/pii-list.txt" "$DECODE_TMP/jp.decoded.txt" > /tmp/loglm-test-pii-list.out 2> /tmp/loglm-test-pii-list.err
-rg -q '\[1/1\] pii_list \(1 hit\): 斎藤健二' /tmp/loglm-test-pii-list.out || fail "pii review should include external list candidates"
-rg -q 'line 1: 氏名: 斎藤健二' /tmp/loglm-test-pii-list.out || fail "pii review should show UTF-8 context for external list candidates"
+rg -q '\[1/1\] pii_list \(1 hit\): 斉藤賢爾' /tmp/loglm-test-pii-list.out || fail "pii review should include external list candidates"
+rg -q 'line 1: 氏名: 斉藤賢爾' /tmp/loglm-test-pii-list.out || fail "pii review should show UTF-8 context for external list candidates"
 rg -q '氏名: \*\*\*' "$DECODE_TMP/jp.redacted.txt" || fail "pii review should replace accepted external list candidates"
 pass "pii review with external candidate list"
+
+printf 'y\n' | "$ROOT_DIR/loglm-decode" --review-pii --pii-list-only --pii-list "$DECODE_TMP/pii-list.txt" "$DECODE_TMP/jp.decoded.txt" > /tmp/loglm-test-pii-list-only.out 2> /tmp/loglm-test-pii-list-only.err
+rg -q '\[1/1\] pii_list \(1 hit\): 斉藤賢爾' /tmp/loglm-test-pii-list-only.out || fail "pii-list-only should review external list candidates"
+! rg -Fq 'email (' /tmp/loglm-test-pii-list-only.out || fail "pii-list-only should skip automatic candidate detection"
+pass "pii review with external candidate list only"
+
+cat > "$DECODE_TMP/bulk.decoded.txt" <<'EOF'
+氏名: 斉藤賢爾
+ID: ks91
+EOF
+
+"$ROOT_DIR/loglm-decode" --review-pii --replace-all --pii-list-only --pii-list "$DECODE_TMP/pii-list.txt" "$DECODE_TMP/bulk.decoded.txt" > /tmp/loglm-test-pii-replace-all.out 2> /tmp/loglm-test-pii-replace-all.err
+rg -q '氏名: \*\*\*' "$DECODE_TMP/bulk.redacted.txt" || fail "replace-all should redact list candidates without prompting"
+rg -q 'ID: \*\*\*' "$DECODE_TMP/bulk.redacted.txt" || fail "replace-all should redact every matched list candidate"
+pass "pii replace-all with external candidate list"
 
 # 4) install-node runtime behavior for missing NVM_DIR
 NODE_TMP="$(/usr/bin/mktemp -d)"
