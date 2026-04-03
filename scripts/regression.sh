@@ -211,6 +211,29 @@ rg -q '^> これまでは何をしてきたっけ。$' "$DECODE_TMP/loglm-gemini
 rg -q '^✦ 要約します。$' "$DECODE_TMP/loglm-gemini-log-20260403-223849-pid84024.decoded.txt" || fail "decode should keep Gemini response text"
 pass "decode Gemini v0.36 UI noise"
 
+cat > "$DECODE_TMP/loglm-gemini-log-20260403-223900-pid84025.txt" <<'EOF'
+===== loglm start [gemini]: 2026-04-03 22:39:00 +0900 =====
+ ⠏ Evaluating Daily Tasks (esc to cancel, 4s)                   ? for shortcuts
+ > /ei
+ editor           Set external editor preference
+ extensions       Manage extensions
+ quit             Exit the cli
+ ▼
+ (1/23)
+ > /ex
+ extensions   Manage extensions
+ quit         Exit the cli
+ > /quit
+ Agent powering down. Goodbye!
+EOF
+
+run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-gemini-log-20260403-223900-pid84025.txt"
+! rg -q 'Evaluating Daily Tasks' "$DECODE_TMP/loglm-gemini-log-20260403-223900-pid84025.decoded.txt" || fail "decode should drop Gemini alternate spinner labels"
+! rg -q '^> /ei$|^> /ex$|^editor +Set external editor preference$|^\(1/23\)$' "$DECODE_TMP/loglm-gemini-log-20260403-223900-pid84025.decoded.txt" || fail "decode should drop Gemini slash-command menu noise"
+rg -q '^> /quit$' "$DECODE_TMP/loglm-gemini-log-20260403-223900-pid84025.decoded.txt" || fail "decode should keep actual Gemini slash commands"
+rg -q 'Agent powering down\. Goodbye!' "$DECODE_TMP/loglm-gemini-log-20260403-223900-pid84025.decoded.txt" || fail "decode should keep Gemini slash command results"
+pass "decode Gemini slash menu noise"
+
 cat > "$DECODE_TMP/sample.decoded.txt" <<'EOF'
 Contact: ks91@example.com
 Name: Kenji Saito

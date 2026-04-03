@@ -294,6 +294,7 @@ if ($is_claude) {
   my $pending_prompt;
   my $last_emitted_prompt;
   my $in_notice_block = 0;
+  my $in_slash_menu = 0;
 
   for my $raw (@lines) {
     my $line = $raw;
@@ -320,6 +321,17 @@ if ($is_claude) {
       next;
     }
 
+    if ($in_slash_menu) {
+      if (
+        $line =~ /^\s*▼\s*$/ ||
+        $line =~ /^\s*\(\d+\/\d+\)\s*$/ ||
+        $line =~ /^\s*[a-z][a-z0-9-]*(?:\s{2,}|\t+).+/i
+      ) {
+        next;
+      }
+      $in_slash_menu = 0;
+    }
+
     # Drop frequent transient UI lines.
     if (
       $line eq q{} ||
@@ -337,12 +349,15 @@ if ($is_claude) {
       $line =~ m{^\s*~/.*\s+no sandbox\s+Auto \(Gemini 3\)\s*$} ||
       $line =~ /^\s*Shift\+Tab to accept edits\s*$/i ||
       $line =~ /^\s*\? for shortcuts\s*$/i ||
+      $line =~ /^\s*▼\s*$/ ||
+      $line =~ /^\s*\(\d+\/\d+\)\s*$/ ||
+      ($line =~ /^\s*\X\s*$/u && $line !~ /[[:alnum:]]/) ||
       $line =~ m{^\s*>\s*Type your message or \@path/to/file\s*$} ||
       $line =~ /^\s*What.s Changing: / ||
       $line =~ /^\s*How it affects you: / ||
       $line =~ /^\s*Read more: https:\/\/goo\.gle\/geminicli-updates\s*$/ ||
       $line =~ /^[\x{2800}-\x{28FF}]\s+/u ||
-      $line =~ /^\s*[\x{2800}-\x{28FF}]?\s*(?:Thinking\.\.\.|Recapping .*|Revisiting .*|Planning .*|Analyzing .*)\s+\(esc to cancel,\s*\d+s\)(?:\s+.*)?$/u
+      $line =~ /^\s*[\x{2800}-\x{28FF}]?\s*(?:Thinking\.\.\.|[A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+){0,6})\s+\(esc to cancel,\s*\d+s\)(?:\s+.*)?$/u
     ) {
       next;
     }
@@ -353,6 +368,10 @@ if ($is_claude) {
       $p =~ s/^\s+//;
       $p =~ s/\s+$//;
       next if $p eq q{};
+      if (defined $pending_prompt && $pending_prompt =~ m{^/\S+} && $p =~ m{^/\S+}) {
+        $pending_prompt = $p;
+        next;
+      }
       if (!defined $pending_prompt) {
         $pending_prompt = $p;
         next;
@@ -376,6 +395,18 @@ if ($is_claude) {
 
     if (defined $pending_prompt) {
       next if $line =~ m{^\s*workspace \(/directory\)\s+sandbox\s+/model\s*$};
+      if (
+        $pending_prompt =~ m{^/\S+} &&
+        (
+          $line =~ /^\s*▼\s*$/ ||
+          $line =~ /^\s*\(\d+\/\d+\)\s*$/ ||
+          $line =~ /^\s*[a-z][a-z0-9-]*(?:\s{2,}|\t+).+/i
+        )
+      ) {
+        $in_slash_menu = 1;
+        undef $pending_prompt;
+        next;
+      }
       if ($line eq $pending_prompt) {
         next;
       }
