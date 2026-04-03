@@ -198,6 +198,35 @@ You can decode multiple files with shell globbing, for example:
 loglm-decode logs/loglm-codex-log-20260307-*.txt
 ```
 
+Review and redact PII-like strings interactively:
+
+```bash
+loglm-decode --review-pii logs/*.decoded.txt
+```
+
+This writes:
+
+- `*.redacted.txt`
+
+Behavior:
+
+- raw `*.txt` and `*.decoded.txt` are preserved
+- `--review-pii` never edits raw log files
+- if the input is already `*.redacted.txt`, it is reviewed in place
+- candidates show their first matching line number and line text for review
+
+You can also add literal candidates from a file:
+
+```bash
+loglm-decode --review-pii --pii-list examples/pii-candidates.txt logs/*.decoded.txt
+```
+
+Rules for `--pii-list`:
+
+- one literal string per line
+- empty lines are ignored
+- lines beginning with `#` are treated as comments
+
 ## Dev Install (Branch)
 
 For development testing, install from the current branch without editing `REPO_RAW_BASE` manually:

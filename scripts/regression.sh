@@ -204,6 +204,21 @@ printf 'e\n[NAME]\n' | "$ROOT_DIR/loglm-decode" --review-pii "$DECODE_TMP/sample
 rg -q 'Welcome back \[NAME\]!' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should allow in-place re-review on redacted input"
 pass "pii review on redacted input"
 
+cat > "$DECODE_TMP/jp.decoded.txt" <<'EOF'
+氏名: 斎藤健二
+所属: 早稲田大学
+EOF
+cat > "$DECODE_TMP/pii-list.txt" <<'EOF'
+# literal pii candidates
+斎藤健二
+EOF
+
+printf 'y\n' | "$ROOT_DIR/loglm-decode" --review-pii --pii-list "$DECODE_TMP/pii-list.txt" "$DECODE_TMP/jp.decoded.txt" > /tmp/loglm-test-pii-list.out 2> /tmp/loglm-test-pii-list.err
+rg -q '\[1/1\] pii_list \(1 hit\): 斎藤健二' /tmp/loglm-test-pii-list.out || fail "pii review should include external list candidates"
+rg -q 'line 1: 氏名: 斎藤健二' /tmp/loglm-test-pii-list.out || fail "pii review should show UTF-8 context for external list candidates"
+rg -q '氏名: \*\*\*' "$DECODE_TMP/jp.redacted.txt" || fail "pii review should replace accepted external list candidates"
+pass "pii review with external candidate list"
+
 # 4) install-node runtime behavior for missing NVM_DIR
 NODE_TMP="$(/usr/bin/mktemp -d)"
 trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP"' EXIT

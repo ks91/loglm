@@ -14,6 +14,7 @@ Options:
   -o, --output <file>  Output file path (single input only)
   --keep-overlap       Keep overlapping context instead of trimming it
   --review-pii         Review and optionally replace PII-like candidates
+  --pii-list <file>    Add review candidates from a newline-delimited list
   --replacement <text> Default replacement text for accepted candidates
   -h, --help           Show this help
 
@@ -25,6 +26,7 @@ Behavior:
     in the same series is trimmed from the current decoded output.
   - With --review-pii, decoded output is scanned for PII-like candidates and
     each candidate is reviewed interactively before replacement.
+  - --pii-list lines are treated as literal strings to review and replace.
 EOF
 }
 
@@ -719,9 +721,33 @@ s/$quoted/$replacement/g;
 ' "$file"
 }
 
+merge_pii_list_candidates() {
+  local out_file="$1"
+  local pii_list_file="$2"
+  local line first_match
+
+  [[ -f "$pii_list_file" ]] || {
+    echo "error: pii list file not found: $pii_list_file" >&2
+    exit 1
+  }
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -n "$line" ]] || continue
+    [[ "$line" == \#* ]] && continue
+    first_match="$(grep -n -F -m 1 -- "$line" "$out_file" || true)"
+    if [[ -n "$first_match" ]]; then
+      printf 'pii_list\t1\t%s\t%s\t%s\n' \
+        "$line" \
+        "${first_match%%:*}" \
+        "${first_match#*:}"
+    fi
+  done < "$pii_list_file"
+}
+
 review_pii_candidates() {
   local out_file="$1"
   local default_replacement="$2"
+  local pii_list_file="${3:-}"
   local line reason count value line_no line_text answer custom total index
   local -a candidates
 
@@ -729,6 +755,19 @@ review_pii_candidates() {
     [[ -n "$line" ]] || continue
     candidates+=("$line")
   done < <(list_pii_candidates "$out_file")
+
+  if [[ -n "$pii_list_file" ]]; then
+    local existing_values
+    existing_values="$(printf '%s\n' "${candidates[@]}" | awk -F'\t' '{print $3}' || true)"
+    while IFS= read -r line; do
+      [[ -n "$line" ]] || continue
+      IFS=$'\t' read -r reason count value line_no line_text <<< "$line"
+      if [[ -n "$existing_values" ]] && printf '%s\n' "$existing_values" | grep -Fqx -- "$value"; then
+        continue
+      fi
+      candidates+=("$line")
+    done < <(merge_pii_list_candidates "$out_file" "$pii_list_file")
+  fi
 
   total="${#candidates[@]}"
   if ((total == 0)); then
@@ -780,6 +819,7 @@ review_pii_candidates() {
 output_path=""
 KEEP_OVERLAP=0
 REVIEW_PII=0
+PII_LIST_FILE=""
 DEFAULT_REPLACEMENT="***"
 inputs=()
 while (($# > 0)); do
@@ -803,6 +843,14 @@ while (($# > 0)); do
     --review-pii)
       REVIEW_PII=1
       shift
+      ;;
+    --pii-list)
+      if (($# < 2)); then
+        echo "error: missing value for $1" >&2
+        exit 2
+      fi
+      PII_LIST_FILE="$2"
+      shift 2
       ;;
     --replacement)
       if (($# < 2)); then
@@ -875,7 +923,7 @@ done
       decode_one "${inputs[0]}" "$output_path"
     fi
     if [[ "$REVIEW_PII" -eq 1 ]]; then
-      review_pii_candidates "$output_path" "$DEFAULT_REPLACEMENT"
+      review_pii_candidates "$output_path" "$DEFAULT_REPLACEMENT" "$PII_LIST_FILE"
     fi
   exit 0
 fi
@@ -900,6 +948,6 @@ for in_file in "${inputs[@]}"; do
     decode_one "$in_file" "$out_file"
   fi
   if [[ "$REVIEW_PII" -eq 1 ]]; then
-    review_pii_candidates "$out_file" "$DEFAULT_REPLACEMENT"
+    review_pii_candidates "$out_file" "$DEFAULT_REPLACEMENT" "$PII_LIST_FILE"
   fi
 done

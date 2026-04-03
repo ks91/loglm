@@ -1,0 +1,11 @@
+# Example PII candidate list for loglm-decode --pii-list
+# One literal candidate per line.
+# Lines beginning with # are ignored.
+
+斉藤賢爾
+斉藤
+賢爾
+Kenji Saito
+Kenji
+Saito
+ks91
