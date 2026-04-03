@@ -177,9 +177,10 @@ Behavior:
 Developer guide for prompt-agent authors:
 
 - See [`PROMPT_AGENT_GUIDELINES.md`](./PROMPT_AGENT_GUIDELINES.md)
-- For log anonymization workflow, see [`PII_REDACTION_GUIDE.md`](./PII_REDACTION_GUIDE.md)
 
 ## Decode Logs
+
+For log anonymization workflow, see [`PII_REDACTION_GUIDE.md`](./PII_REDACTION_GUIDE.md).
 
 Decode raw `script` logs before reading:
 
