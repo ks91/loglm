@@ -176,6 +176,34 @@ rg -q '^❯ new prompt$' "$DECODE_TMP/loglm-claude-log-20260403-040000-pid4.deco
 ! rg -q '^❯ old prompt$' "$DECODE_TMP/loglm-claude-log-20260403-040000-pid4.decoded.txt" || fail "decode overlap trimming should drop repeated Claude-style leading context"
 pass "decode overlap trimming for Claude-style prompts"
 
+cat > "$DECODE_TMP/sample.decoded.txt" <<'EOF'
+Contact: ks91@example.com
+Path: /Volumes/ks91home/ks91/project
+Greeting: Welcome back Kenji!
+Date: 2026-04-03
+Timestamp: 2026-03-05 23
+Compact: 20260306-021406
+EOF
+
+printf 'y\nn\ny\n' | "$ROOT_DIR/loglm-decode" --review-pii "$DECODE_TMP/sample.decoded.txt" > /tmp/loglm-test-pii-review.out 2> /tmp/loglm-test-pii-review.err
+[[ -f "$DECODE_TMP/sample.redacted.txt" ]] || fail "pii review should create .redacted.txt from decoded input"
+rg -q 'line 1: Contact: ks91@example.com' /tmp/loglm-test-pii-review.out || fail "pii review should show line context for candidates"
+rg -q '\*\*\*' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should replace accepted candidates"
+! rg -q 'ks91@example.com' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should redact accepted email candidates"
+! rg -q '/Volumes/ks91home/ks91' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should redact accepted user-path candidates"
+rg -q 'Welcome back Kenji!' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should keep rejected candidates unchanged"
+rg -q 'Date: 2026-04-03' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should not treat dates as phone candidates"
+rg -q 'Timestamp: 2026-03-05 23' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should not treat timestamps as phone candidates"
+rg -q 'Compact: 20260306-021406' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should not treat compact timestamps as phone candidates"
+! rg -q 'phone .*2026-04-03' /tmp/loglm-test-pii-review.out || fail "pii review should not list dates as phone candidates"
+! rg -q 'phone .*2026-03-05 23' /tmp/loglm-test-pii-review.out || fail "pii review should not list timestamps as phone candidates"
+! rg -q 'phone .*20260306-021406' /tmp/loglm-test-pii-review.out || fail "pii review should not list compact timestamps as phone candidates"
+pass "pii review on decoded input"
+
+printf 'e\n[NAME]\n' | "$ROOT_DIR/loglm-decode" --review-pii "$DECODE_TMP/sample.redacted.txt" > /tmp/loglm-test-pii-reredact.out 2> /tmp/loglm-test-pii-reredact.err
+rg -q 'Welcome back \[NAME\]!' "$DECODE_TMP/sample.redacted.txt" || fail "pii review should allow in-place re-review on redacted input"
+pass "pii review on redacted input"
+
 # 4) install-node runtime behavior for missing NVM_DIR
 NODE_TMP="$(/usr/bin/mktemp -d)"
 trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP"' EXIT

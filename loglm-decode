@@ -13,6 +13,8 @@ EOF
 Options:
   -o, --output <file>  Output file path (single input only)
   --keep-overlap       Keep overlapping context instead of trimming it
+  --review-pii         Review and optionally replace PII-like candidates
+  --replacement <text> Default replacement text for accepted candidates
   -h, --help           Show this help
 
 Behavior:
@@ -21,6 +23,8 @@ Behavior:
     Example: logs/codex-log-20260217.txt -> logs/codex-log-20260217.decoded.txt
   - By default, overlapping leading context shared with the previous log
     in the same series is trimmed from the current decoded output.
+  - With --review-pii, decoded output is scanned for PII-like candidates and
+    each candidate is reviewed interactively before replacement.
 EOF
 }
 
@@ -35,6 +39,35 @@ derive_output_path() {
   else
     printf '%s/%s.decoded.txt\n' "$dir" "$stem"
   fi
+}
+
+derive_redacted_output_path() {
+  local in_file="$1"
+  local dir base stem
+  dir="$(dirname "$in_file")"
+  base="$(basename "$in_file")"
+  if [[ "$base" == *.redacted.txt ]]; then
+    printf '%s/%s\n' "$dir" "$base"
+    return 0
+  fi
+  stem="${base%.decoded.txt}"
+  if [[ "$stem" == "$base" ]]; then
+    stem="${base%.redacted.txt}"
+  fi
+  if [[ "$stem" == "$base" ]]; then
+    stem="${base%.*}"
+  fi
+  printf '%s/%s.redacted.txt\n' "$dir" "$stem"
+}
+
+is_decoded_input() {
+  local in_file="$1"
+  [[ "$in_file" == *.decoded.txt ]]
+}
+
+is_redacted_input() {
+  local in_file="$1"
+  [[ "$in_file" == *.redacted.txt ]]
 }
 
 decode_raw_to_file() {
@@ -611,8 +644,143 @@ decode_one() {
   trim_overlap_with_previous "$in_file" "$out_file"
 }
 
+list_pii_candidates() {
+  local in_file="$1"
+  perl -CS -ne '
+use strict;
+use warnings;
+use Encode qw(decode FB_DEFAULT);
+
+binmode(STDOUT, ":encoding(UTF-8)");
+
+my %count;
+my %reason;
+my %first_line_no;
+my %first_line_text;
+
+sub add_candidate {
+  my ($value, $why, $line_no, $line_text) = @_;
+  return if !defined($value) || $value eq q{};
+  $count{$value}++;
+  $reason{$value} = $why if !exists $reason{$value};
+  $first_line_no{$value} = $line_no if !exists $first_line_no{$value};
+  $first_line_text{$value} = $line_text if !exists $first_line_text{$value};
+}
+
+my $line = decode("UTF-8", $_, FB_DEFAULT);
+while ($line =~ /([A-Za-z0-9._%+-]+\@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/g) {
+  add_candidate($1, "email", $., $line);
+}
+while ($line =~ /((?:\+?\d[\d .()]*[- ][\d .()-]*\d)|(?:\+?\d(?:[\d .()]*\d){9,}))/g) {
+  my $candidate = $1;
+  my $digits = ($candidate =~ tr/0-9//);
+  next if $candidate =~ /^\d{4}-\d{2}-\d{2}$/;
+  next if $candidate =~ /^\d{4}\/\d{2}\/\d{2}$/;
+  next if $candidate =~ /^\d{4}-\d{2}-\d{2}[ T]\d{1,2}(?::\d{2}(?::\d{2})?)?$/;
+  next if $candidate =~ /^\d{4}\/\d{2}\/\d{2}[ T]\d{1,2}(?::\d{2}(?::\d{2})?)?$/;
+  next if $candidate =~ /^\d{8}-\d{6}$/;
+  next if $candidate =~ /^\d{8}-\d{4}$/;
+  next if $digits < 10;
+  add_candidate($candidate, "phone", $., $line);
+}
+while ($line =~ m{((?:/Users/[^/\s]+|/home/[^/\s]+|/Volumes/[^/\s]+/[^/\s]+))}g) {
+  add_candidate($1, "user_path", $., $line);
+}
+while ($line =~ /Welcome back ([A-Za-z][A-Za-z .'\''-]{1,40})!/g) {
+  add_candidate($1, "greeting_name", $., $line);
+}
+
+END {
+  for my $value (sort {
+         $reason{$a} cmp $reason{$b}
+      || $count{$b} <=> $count{$a}
+      || length($b) <=> length($a)
+      || $a cmp $b
+    } keys %count) {
+    chomp(my $line_text = $first_line_text{$value});
+    print join("\t", $reason{$value}, $count{$value}, $value, $first_line_no{$value}, $line_text), "\n";
+  }
+}
+' "$in_file"
+}
+
+replace_literal_in_file() {
+  local file="$1"
+  local needle="$2"
+  local replacement="$3"
+  NEEDLE="$needle" REPLACEMENT="$replacement" perl -0pi -e '
+use strict;
+use warnings;
+
+my $needle = $ENV{NEEDLE} // q{};
+my $replacement = $ENV{REPLACEMENT} // q{};
+my $quoted = quotemeta($needle);
+s/$quoted/$replacement/g;
+' "$file"
+}
+
+review_pii_candidates() {
+  local out_file="$1"
+  local default_replacement="$2"
+  local line reason count value line_no line_text answer custom total index
+  local -a candidates
+
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    candidates+=("$line")
+  done < <(list_pii_candidates "$out_file")
+
+  total="${#candidates[@]}"
+  if ((total == 0)); then
+    echo "pii-review: no candidates found in $out_file"
+    return 0
+  fi
+
+  echo "pii-review: $total candidate(s) found in $out_file"
+  index=0
+  for line in "${candidates[@]}"; do
+    index=$((index + 1))
+    IFS=$'\t' read -r reason count value line_no line_text <<< "$line"
+    printf '[%d/%d] %s (%s hit%s): %s\n' \
+      "$index" "$total" "$reason" "$count" \
+      "$([[ "$count" == "1" ]] && printf '' || printf 's')" \
+      "$value"
+    if [[ -n "${line_no:-}" && -n "${line_text:-}" ]]; then
+      printf '        line %s: %s\n' "$line_no" "$line_text"
+    fi
+    while true; do
+      printf 'Replace with "%s"? [y/N/e/q] ' "$default_replacement" >&2
+      IFS= read -r answer || answer="q"
+      case "$answer" in
+        y|Y|yes|YES)
+          replace_literal_in_file "$out_file" "$value" "$default_replacement"
+          break
+          ;;
+        e|E|edit|EDIT)
+          printf 'Replacement text: ' >&2
+          IFS= read -r custom || custom=""
+          replace_literal_in_file "$out_file" "$value" "$custom"
+          break
+          ;;
+        q|Q|quit|QUIT)
+          echo "pii-review: stopped after $((index - 1)) reviewed candidate(s)"
+          return 0
+          ;;
+        ""|n|N|no|NO)
+          break
+          ;;
+        *)
+          echo "Please answer y, n, e, or q." >&2
+          ;;
+      esac
+    done
+  done
+}
+
 output_path=""
 KEEP_OVERLAP=0
+REVIEW_PII=0
+DEFAULT_REPLACEMENT="***"
 inputs=()
 while (($# > 0)); do
   case "$1" in
@@ -631,6 +799,18 @@ while (($# > 0)); do
     --keep-overlap)
       KEEP_OVERLAP=1
       shift
+      ;;
+    --review-pii)
+      REVIEW_PII=1
+      shift
+      ;;
+    --replacement)
+      if (($# < 2)); then
+        echo "error: missing value for $1" >&2
+        exit 2
+      fi
+      DEFAULT_REPLACEMENT="$2"
+      shift 2
       ;;
     --)
       shift
@@ -659,7 +839,7 @@ fi
 
 filtered_inputs=()
 for in_file in "${inputs[@]}"; do
-  if [[ "$in_file" == *.decoded.txt ]]; then
+  if [[ "$in_file" == *.decoded.txt && "$REVIEW_PII" -eq 0 ]]; then
     continue
   fi
   filtered_inputs+=("$in_file")
@@ -684,20 +864,42 @@ for in_file in "${inputs[@]}"; do
   fi
 done
 
-if [[ -n "$output_path" ]]; then
-  if [[ "${inputs[0]}" == "$output_path" ]]; then
-    echo "error: input and output must be different files." >&2
-    exit 2
-  fi
-  decode_one "${inputs[0]}" "$output_path"
+  if [[ -n "$output_path" ]]; then
+    if [[ "${inputs[0]}" == "$output_path" ]]; then
+      echo "error: input and output must be different files." >&2
+      exit 2
+    fi
+    if is_decoded_input "${inputs[0]}" || is_redacted_input "${inputs[0]}"; then
+      cp "${inputs[0]}" "$output_path"
+    else
+      decode_one "${inputs[0]}" "$output_path"
+    fi
+    if [[ "$REVIEW_PII" -eq 1 ]]; then
+      review_pii_candidates "$output_path" "$DEFAULT_REPLACEMENT"
+    fi
   exit 0
 fi
 
 for in_file in "${inputs[@]}"; do
-  out_file="$(derive_output_path "$in_file")"
+  if [[ "$REVIEW_PII" -eq 1 ]]; then
+    out_file="$(derive_redacted_output_path "$in_file")"
+  else
+    out_file="$(derive_output_path "$in_file")"
+  fi
   if [[ "$in_file" == "$out_file" ]]; then
+    if [[ "$REVIEW_PII" -eq 1 ]] && is_redacted_input "$in_file"; then
+      review_pii_candidates "$out_file" "$DEFAULT_REPLACEMENT"
+      continue
+    fi
     echo "error: input and output must be different files: $in_file" >&2
     exit 2
   fi
-  decode_one "$in_file" "$out_file"
+  if is_decoded_input "$in_file" || is_redacted_input "$in_file"; then
+    cp "$in_file" "$out_file"
+  else
+    decode_one "$in_file" "$out_file"
+  fi
+  if [[ "$REVIEW_PII" -eq 1 ]]; then
+    review_pii_candidates "$out_file" "$DEFAULT_REPLACEMENT"
+  fi
 done
