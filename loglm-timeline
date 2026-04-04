@@ -96,7 +96,36 @@ case "${1:-}" in
     ;;
 esac
 
-for file in "$@"; do
+sortable_files=()
+while IFS= read -r entry; do
+  sortable_files+=("$entry")
+done < <(
+  for file in "$@"; do
+    [[ -f "$file" ]] || {
+      echo "loglm-timeline: file not found: $file" >&2
+      exit 2
+    }
+    sort_key="$(python3 - "$file" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8", errors="replace")
+m = re.search(r'^===== loglm start \[[^]]+\]:?\s+(.+?)\s+=====$', text, re.M)
+if m:
+    key = m.group(1).strip()
+else:
+    key = path.name
+print(f"{key}\t{path}")
+PY
+)"
+    printf '%s\n' "$sort_key"
+  done | LC_ALL=C sort
+)
+
+for entry in "${sortable_files[@]}"; do
+  file="${entry#*$'\t'}"
   [[ -f "$file" ]] || {
     echo "loglm-timeline: file not found: $file" >&2
     exit 2

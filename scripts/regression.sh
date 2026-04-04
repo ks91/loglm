@@ -311,6 +311,16 @@ rg -q '^- conversation interrupted$' /tmp/loglm-test-timeline.out || fail "timel
 rg -q '^- いきなり 30,000文字以上を目指さなくてよいので、骨組みから作ろう。$' /tmp/loglm-test-timeline.out || fail "timeline should capture later user turns"
 rg -q '^- update: degree-demo-saito\.bib$' /tmp/loglm-test-timeline.out || fail "timeline should capture Claude update events"
 rg -q '^- bash: bibtex degree-demo-saito$' /tmp/loglm-test-timeline.out || fail "timeline should capture Claude bash events"
+
+cat > "$DECODE_TMP/timeline-c.decoded.txt" <<'EOF'
+===== loglm start [codex]: 2026-04-04 09:00:00 +0900 =====
+
+› 朝の作業
+EOF
+
+"$ROOT_DIR/loglm-timeline" "$DECODE_TMP/timeline-b.decoded.txt" "$DECODE_TMP/timeline-c.decoded.txt" > /tmp/loglm-test-timeline-sorted.out 2> /tmp/loglm-test-timeline-sorted.err
+first_session="$(rg '^===== ' /tmp/loglm-test-timeline-sorted.out | sed -n '1p')"
+[[ "$first_session" == '===== timeline-c.decoded.txt' ]] || fail "timeline should sort sessions by header time instead of input order"
 pass "timeline extraction"
 
 cat > "$DECODE_TMP/sample.decoded.txt" <<'EOF'
