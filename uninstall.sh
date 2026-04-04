@@ -9,6 +9,7 @@ SETUP_DIR="$LOGLM_HOME/setup"
 TARGETS=(
   "$BIN_DIR/loglm"
   "$BIN_DIR/loglm-decode"
+  "$BIN_DIR/loglm-timeline"
   "$SETUP_DIR/lib.sh"
   "$SETUP_DIR/platform-detect.sh"
   "$SETUP_DIR/install-node.sh"

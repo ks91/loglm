@@ -102,6 +102,7 @@ pass "shell syntax checks"
 # 2) Help output
 run_cmd "$ROOT_DIR/loglm" --help
 run_cmd "$ROOT_DIR/loglm" agent install --help
+run_cmd "$ROOT_DIR/loglm-timeline" --help
 pass "help output"
 
 "$ROOT_DIR/loglm" --version > /tmp/loglm-test-version.out 2>/tmp/loglm-test-version.err
@@ -233,6 +234,39 @@ run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-gemini-log-20260403-223900-p
 rg -q '^> /quit$' "$DECODE_TMP/loglm-gemini-log-20260403-223900-pid84025.decoded.txt" || fail "decode should keep actual Gemini slash commands"
 rg -q 'Agent powering down\. Goodbye!' "$DECODE_TMP/loglm-gemini-log-20260403-223900-pid84025.decoded.txt" || fail "decode should keep Gemini slash command results"
 pass "decode Gemini slash menu noise"
+
+cat > "$DECODE_TMP/timeline-a.decoded.txt" <<'EOF'
+===== loglm start [codex]: 2026-04-04 10:31:51 +0900 =====
+
+› 専門職学位論文のデモ原稿を作りたい。
+• PATとしてワークフローを開始します。
+• Ran ls -1 *.xlsx interview*-log*.txt
+• Edited 2 files (+282 -0)
+✓  Shell platex -interaction=nonstopmode degree-demo-saito.tex
+■ Conversation interrupted - tell the model what to do differently.
+› いきなり 30,000文字以上を目指さなくてよいので、骨組みから作ろう。
+EOF
+
+cat > "$DECODE_TMP/timeline-b.decoded.txt" <<'EOF'
+===== loglm start [claude]: 2026-04-04 17:05:23 +0900 =====
+
+❯ 参考文献のコメントを反映して。
+⏺ Update(degree-demo-saito.bib)
+⏺ Bash(bibtex degree-demo-saito)
+EOF
+
+"$ROOT_DIR/loglm-timeline" "$DECODE_TMP/timeline-a.decoded.txt" "$DECODE_TMP/timeline-b.decoded.txt" > /tmp/loglm-test-timeline.out 2> /tmp/loglm-test-timeline.err
+rg -q '^===== timeline-a\.decoded\.txt$' /tmp/loglm-test-timeline.out || fail "timeline should print the session file name"
+rg -q '^agent: codex$' /tmp/loglm-test-timeline.out || fail "timeline should print agent"
+rg -q '^opening: 専門職学位論文のデモ原稿を作りたい。$' /tmp/loglm-test-timeline.out || fail "timeline should capture opening user request"
+rg -q '^- workflow started$' /tmp/loglm-test-timeline.out || fail "timeline should capture workflow-start events"
+rg -q '^- ran: ls -1 \*\.xlsx interview\*-log\*\.txt$' /tmp/loglm-test-timeline.out || fail "timeline should capture ran events"
+rg -q '^- shell: platex -interaction=nonstopmode degree-demo-saito\.tex$' /tmp/loglm-test-timeline.out || fail "timeline should capture shell events"
+rg -q '^- conversation interrupted$' /tmp/loglm-test-timeline.out || fail "timeline should capture interruptions"
+rg -q '^- いきなり 30,000文字以上を目指さなくてよいので、骨組みから作ろう。$' /tmp/loglm-test-timeline.out || fail "timeline should capture later user turns"
+rg -q '^- update: degree-demo-saito\.bib$' /tmp/loglm-test-timeline.out || fail "timeline should capture Claude update events"
+rg -q '^- bash: bibtex degree-demo-saito$' /tmp/loglm-test-timeline.out || fail "timeline should capture Claude bash events"
+pass "timeline extraction"
 
 cat > "$DECODE_TMP/sample.decoded.txt" <<'EOF'
 Contact: ks91@example.com

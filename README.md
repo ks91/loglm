@@ -17,6 +17,7 @@ The installer places `loglm` in `~/.local/bin` by default.
 It also installs:
 
 - `loglm-decode` into `~/.local/bin`
+- `loglm-timeline` into `~/.local/bin`
 - setup scripts into `~/.local/share/loglm/setup`
 
 If the install bin directory is not in `PATH`, `install.sh` appends it to your shell profile automatically.
@@ -37,6 +38,7 @@ Removes only:
 
 - `loglm`
 - `loglm-decode`
+- `loglm-timeline`
 - `~/.local/share/loglm/setup/*` managed by loglm
 
 ## Supported Platforms
@@ -191,6 +193,26 @@ loglm-decode logs/loglm-codex-log-20260307-100915-pid12345.txt
 This writes:
 
 - `logs/loglm-codex-log-20260307-100915-pid12345.decoded.txt`
+
+Build a compact timeline from decoded logs:
+
+```bash
+loglm-timeline logs/*.decoded.txt
+```
+
+You can also use redacted/anonymized logs:
+
+```bash
+loglm-timeline logs/*.redacted.txt
+loglm-timeline logs/*.redacted.decoded.txt
+```
+
+This prints, for each session:
+
+- start time / agent
+- opening user request
+- later user turns
+- key events such as `Ran`, `Edited`, `Shell`, `Update(...)`, and interruptions
 
 If `--daily-log` was used, decode that daily file instead.
 

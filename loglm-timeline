@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  loglm-timeline <decoded-or-redacted-log-file>...
+
+Extract a compact, session-by-session timeline from loglm decoded logs.
+
+Examples:
+  loglm-timeline logs/*.decoded.txt
+  loglm-timeline logs/*.redacted.txt
+  loglm-timeline logs/*.redacted.decoded.txt
+  loglm-timeline ~/Themes/tex/thesis-test/logs/*.decoded.txt
+EOF
+}
+
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+shorten() {
+  local s="$1"
+  local max="${2:-120}"
+  if ((${#s} > max)); then
+    printf '%s…' "${s:0:max-1}"
+  else
+    printf '%s' "$s"
+  fi
+}
+
+flush_event() {
+  local text="$1"
+  local count="$2"
+  if [[ -z "$text" || "$count" -le 0 ]]; then
+    return 0
+  fi
+  if [[ "$count" -gt 1 ]]; then
+    printf '%s (x%d)\n' "$text" "$count"
+  else
+    printf '%s\n' "$text"
+  fi
+}
+
+find_event_index() {
+  local needle="$1"
+  shift
+  local i=0
+  for item in "$@"; do
+    if [[ "$item" == "$needle" ]]; then
+      printf '%s' "$i"
+      return 0
+    fi
+    ((i+=1))
+  done
+  printf '%s' "-1"
+}
+
+emit_session() {
+  local file="$1"
+  local header="$2"
+  local agent="$3"
+  local opening="$4"
+  local user_turns="$5"
+  local events="$6"
+
+  printf '===== %s\n' "$(basename "$file")"
+  [[ -n "$header" ]] && printf 'time: %s\n' "$header"
+  [[ -n "$agent" ]] && printf 'agent: %s\n' "$agent"
+  [[ -n "$opening" ]] && printf 'opening: %s\n' "$opening"
+  if [[ -n "$user_turns" ]]; then
+    printf 'user turns:\n'
+    printf '%s' "$user_turns"
+  fi
+  if [[ -n "$events" ]]; then
+    printf 'events:\n'
+    printf '%s' "$events"
+  fi
+  printf '\n'
+}
+
+if (($# == 0)); then
+  usage >&2
+  exit 2
+fi
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+for file in "$@"; do
+  [[ -f "$file" ]] || {
+    echo "loglm-timeline: file not found: $file" >&2
+    exit 2
+  }
+
+  header=""
+  agent=""
+  opening=""
+  user_turns=""
+  events=""
+  prev_user=""
+  user_count=0
+  event_count=0
+  event_keys=()
+  event_counts=()
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ -z "$header" && "$line" =~ ^=====\ loglm\ start\ \[([^]]+)\]:?[[:space:]](.*)[[:space:]]=====$ ]]; then
+      agent="${BASH_REMATCH[1]}"
+      header="${BASH_REMATCH[2]}"
+      continue
+    fi
+
+    if [[ "$line" =~ ^[›❯][[:space:]]*(.+)$ ]]; then
+      prompt="$(trim "${BASH_REMATCH[1]}")"
+      [[ -z "$prompt" ]] && continue
+      prompt="$(shorten "$prompt" 140)"
+      if [[ -z "$opening" ]]; then
+        opening="$prompt"
+      elif [[ "$prompt" != "$prev_user" && $user_count -lt 20 ]]; then
+        user_turns+="- $prompt"$'\n'
+        prev_user="$prompt"
+        ((user_count+=1))
+      fi
+      continue
+    fi
+
+    event=""
+    case "$line" in
+      '• Ran '*)
+        event="ran: ${line#• Ran }"
+        ;;
+      '• Edited '*)
+        event="edited: ${line#• Edited }"
+        ;;
+      '• Explored'*)
+        event="explored"
+        ;;
+      '• Waited for background terminal'*)
+        event="waited for background terminal"
+        ;;
+      '• Context compacted'*)
+        event="context compacted"
+        ;;
+      '• PATとしてワークフローを開始します。'*)
+        event="workflow started"
+        ;;
+      '■ Conversation interrupted'*)
+        event="conversation interrupted"
+        ;;
+      '✓  Shell '*)
+        event="shell: ${line#✓  Shell }"
+        ;;
+      '✓  WriteFile Writing to '*)
+        event="writefile: ${line#✓  WriteFile Writing to }"
+        ;;
+      '⏺ Update('*)
+        event="update: ${line#⏺ Update(}"
+        event="${event%)}"
+        ;;
+      '⏺ Bash('*)
+        event="bash: ${line#⏺ Bash(}"
+        event="${event%)}"
+        ;;
+      '⏺ Read '*)
+        event="read: ${line#⏺ Read }"
+        ;;
+      'WARNING:'*)
+        event="warning: ${line#WARNING: }"
+        ;;
+      'Error:'*)
+        event="error: ${line#Error: }"
+        ;;
+    esac
+
+    if [[ -n "$event" ]]; then
+      event="$(shorten "$event" 140)"
+      idx="$(find_event_index "$event" "${event_keys[@]-}")"
+      if [[ "$idx" -ge 0 ]]; then
+        event_counts[$idx]=$(( event_counts[$idx] + 1 ))
+      elif [[ $event_count -lt 200 ]]; then
+        event_keys+=("$event")
+        event_counts+=(1)
+        ((event_count+=1))
+      fi
+    fi
+  done < "$file"
+
+  for ((i=0; i<${#event_keys[@]}; i++)); do
+    events+="- $(flush_event "${event_keys[$i]}" "${event_counts[$i]}")"$'\n'
+  done
+
+  emit_session "$file" "$header" "$agent" "$opening" "$user_turns" "$events"
+done

@@ -102,6 +102,7 @@ mkdir -p "$BIN_DIR" "$SETUP_DIR"
 
 install_executable "loglm" "$BIN_DIR/loglm"
 install_executable "loglm-decode" "$BIN_DIR/loglm-decode"
+install_executable "loglm-timeline" "$BIN_DIR/loglm-timeline"
 install_executable "setup/lib.sh" "$SETUP_DIR/lib.sh"
 install_executable "setup/platform-detect.sh" "$SETUP_DIR/platform-detect.sh"
 install_executable "setup/install-node.sh" "$SETUP_DIR/install-node.sh"
@@ -114,6 +115,7 @@ install_executable "setup/agent-gemini.sh" "$SETUP_DIR/agent-gemini.sh"
 
 echo "Installed: $BIN_DIR/loglm"
 echo "Installed: $BIN_DIR/loglm-decode"
+echo "Installed: $BIN_DIR/loglm-timeline"
 echo "Setup scripts: $SETUP_DIR"
 
 append_path_to_profile_if_needed
