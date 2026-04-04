@@ -10,7 +10,7 @@ NOW_LOCAL="$(date +%Y%m%d-%H%M%S)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOGLM_HOME="${LOGLM_HOME:-$HOME/.local/share/loglm}"
 SETUP_DIR=""
-LOGLM_VERSION="0.1.4"
+LOGLM_VERSION="0.1.5-dev"
 
 SUPPORTED_AGENTS=(codex claude gemini)
 
