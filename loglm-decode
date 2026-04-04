@@ -89,6 +89,8 @@ decode_raw_to_file() {
       profile="claude"
     elif [[ "$base" == *gemini* ]]; then
       profile="gemini"
+    elif [[ "$base" == *codex* ]]; then
+      profile="codex"
     else
       profile="default"
     fi
@@ -569,7 +571,7 @@ find_previous_log_in_series() {
 trim_overlap_with_previous() {
   local in_file="$1"
   local out_file="$2"
-  local prev_raw prev_decoded prev_tmp
+  local prev_raw prev_decoded prev_tmp profile base
   local keep_overlap="${KEEP_OVERLAP:-0}"
 
   [[ "$keep_overlap" -eq 0 ]] || return 0
@@ -578,15 +580,22 @@ trim_overlap_with_previous() {
     return 0
   fi
 
-  prev_decoded="$(derive_output_path "$prev_raw")"
-  prev_tmp=""
-  if [[ ! -f "$prev_decoded" ]]; then
-    prev_tmp="$(/usr/bin/mktemp)"
-    decode_raw_to_file "$prev_raw" "$prev_tmp" > /dev/null
-    prev_decoded="$prev_tmp"
+  profile="default"
+  base="$(basename "$in_file" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$base" == *claude* ]]; then
+    profile="claude"
+  elif [[ "$base" == *gemini* ]]; then
+    profile="gemini"
+  elif [[ "$base" == *codex* ]]; then
+    profile="codex"
   fi
 
+  prev_tmp="$(/usr/bin/mktemp)"
+  decode_raw_to_file "$prev_raw" "$prev_tmp" > /dev/null
+  prev_decoded="$prev_tmp"
+
   LOGLM_DECODE_PREV_PATH="$prev_decoded" \
+  LOGLM_DECODE_OVERLAP_PROFILE="$profile" \
   LOGLM_DECODE_MIN_OVERLAP_LINES="${LOGLM_DECODE_MIN_OVERLAP_LINES:-20}" \
   LOGLM_DECODE_MIN_OVERLAP_CHARS="${LOGLM_DECODE_MIN_OVERLAP_CHARS:-400}" \
   perl -0pi -e '
@@ -594,6 +603,7 @@ use strict;
 use warnings;
 
 my $prev_path = $ENV{LOGLM_DECODE_PREV_PATH} // q{};
+my $profile = $ENV{LOGLM_DECODE_OVERLAP_PROFILE} // q{};
 my $min_lines = $ENV{LOGLM_DECODE_MIN_OVERLAP_LINES} // 20;
 my $min_chars = $ENV{LOGLM_DECODE_MIN_OVERLAP_CHARS} // 400;
 
@@ -617,6 +627,52 @@ for my $i (0 .. $#curr) {
   $body_start = $i + 1;
   $body_start++ while $body_start < @curr && $curr[$body_start] eq q{};
   last;
+}
+
+sub normalize_overlap_line {
+  my ($line) = @_;
+  $line //= q{};
+  $line =~ s/^\s+//;
+  $line =~ s/\s+$//;
+  $line =~ s/\s+/ /g;
+  return $line;
+}
+
+sub build_overlap_blocks {
+  my ($lines_ref, $start_idx) = @_;
+  my @lines = @{$lines_ref};
+  my @blocks = ();
+  my $i = $start_idx;
+
+  while ($i <= $#lines) {
+    while ($i <= $#lines && ($lines[$i] eq q{} || $lines[$i] =~ /^[─-]{10,}\s*$/)) {
+      $i++;
+    }
+    last if $i > $#lines;
+
+    my $start = $i;
+    my @parts = ();
+    my $head = q{};
+    while ($i <= $#lines) {
+      my $line = $lines[$i];
+      last if $i > $start && $line =~ /^(?:\s*›\s|\s*•\s|\s*■\s|\s*❯\s|\s*⏺\s|===== loglm start )/;
+      last if $line =~ /^[─-]{10,}\s*$/;
+      last if $i > $start && $line eq q{};
+      my $normalized = normalize_overlap_line($line);
+      $head = $normalized if $head eq q{} && $normalized ne q{};
+      push @parts, $normalized;
+      $i++;
+    }
+
+    my $text = join q{ }, grep { $_ ne q{} } @parts;
+    $text =~ s/\s+/ /g;
+    $text =~ s/^\s+//;
+    $text =~ s/\s+$//;
+    next if $text eq q{};
+    push @blocks, [$start, $i - 1, $text, $head];
+  }
+
+  return @blocks;
 }
 
 my $best = 0;
@@ -662,7 +718,142 @@ for my $offset (sort { $a <=> $b } keys %candidates) {
   }
 }
 
+if ($profile eq "codex") {
+  my @prev_blocks = build_overlap_blocks(\@prev, 0);
+  my @curr_blocks = build_overlap_blocks(\@curr, $body_start);
+  my %prev_pos = ();
+
+  for my $idx (0 .. $#prev_blocks) {
+    my $text = $prev_blocks[$idx]->[2];
+    my $head = $prev_blocks[$idx]->[3];
+    if ($text ne q{} && !exists $prev_pos{$text}) {
+      $prev_pos{$text} = $idx;
+    }
+    next if $head eq q{};
+    $prev_pos{$head} = $idx unless exists $prev_pos{$head};
+  }
+
+  if (@curr_blocks) {
+    my $prefix_best_blocks = 0;
+    my $prefix_best_chars = 0;
+    my $prefix_best_end = -1;
+
+    CANDIDATE:
+    for my $start_prev (0 .. $#prev_blocks) {
+      my $curr0_text = $curr_blocks[0]->[2];
+      my $curr0_head = $curr_blocks[0]->[3];
+      my $prev0_text = $prev_blocks[$start_prev]->[2];
+      my $prev0_head = $prev_blocks[$start_prev]->[3];
+      next unless (
+        ($curr0_text ne q{} && $curr0_text eq $prev0_text) ||
+        ($curr0_head ne q{} && $curr0_head eq $prev0_head)
+      );
+
+      my $pj = $start_prev;
+      my $matched_blocks = 0;
+      my $matched_chars = 0;
+      my $last_matched_ci = -1;
+      my $miss_streak = 0;
+
+      for my $ci (0 .. $#curr_blocks) {
+        my $found = -1;
+        for my $probe ($pj .. $#prev_blocks) {
+          my $curr_text = $curr_blocks[$ci]->[2];
+          my $prev_text = $prev_blocks[$probe]->[2];
+          my $curr_head = $curr_blocks[$ci]->[3];
+          my $prev_head = $prev_blocks[$probe]->[3];
+          if (
+            ($curr_text ne q{} && $curr_text eq $prev_text) ||
+            ($curr_head ne q{} && $curr_head eq $prev_head)
+          ) {
+            $found = $probe;
+            last;
+          }
+        }
+
+        if ($found >= 0) {
+          $matched_blocks++;
+          $matched_chars += length($curr_blocks[$ci]->[2]) + 1;
+          $last_matched_ci = $ci;
+          $pj = $found + 1;
+          $miss_streak = 0;
+        } else {
+          $miss_streak++;
+          last if $miss_streak >= 3 && $matched_blocks >= 3;
+        }
+      }
+
+      next if $matched_blocks < 3;
+      if (
+        $matched_blocks > $prefix_best_blocks ||
+        ($matched_blocks == $prefix_best_blocks && $matched_chars > $prefix_best_chars)
+      ) {
+        $prefix_best_blocks = $matched_blocks;
+        $prefix_best_chars = $matched_chars;
+        $prefix_best_end = $last_matched_ci;
+      }
+    }
+
+    if ($prefix_best_end >= 0 && $prefix_best_chars >= $min_chars) {
+      $best_offset = $curr_blocks[0]->[0];
+      $best = $curr_blocks[$prefix_best_end]->[1] - $curr_blocks[0]->[0] + 1;
+      $best_chars = $prefix_best_chars;
+    }
+  }
+
+  my $best_block_count = 0;
+  my $best_block_chars = 0;
+
+  if ($best_offset < 0) {
+    for my $curr_idx (0 .. $#curr_blocks) {
+      my $first_text = $curr_blocks[$curr_idx]->[2];
+      my $first_head = $curr_blocks[$curr_idx]->[3];
+      my $first = exists $prev_pos{$first_text} ? $first_text : $first_head;
+      next unless exists $prev_pos{$first};
+      my $prev_idx = $prev_pos{$first};
+      my $k = 0;
+      my $chars = 0;
+      while (
+        $curr_idx + $k <= $#curr_blocks &&
+        $prev_idx + $k <= $#prev_blocks
+      ) {
+        my $curr_text = $curr_blocks[$curr_idx + $k]->[2];
+        my $prev_text = $prev_blocks[$prev_idx + $k]->[2];
+        my $curr_head = $curr_blocks[$curr_idx + $k]->[3];
+        my $prev_head = $prev_blocks[$prev_idx + $k]->[3];
+        last unless (
+          ($curr_text ne q{} && $curr_text eq $prev_text) ||
+          ($curr_head ne q{} && $curr_head eq $prev_head)
+        );
+        $chars += length($curr_blocks[$curr_idx + $k]->[2]) + 1;
+        $k++;
+      }
+      if ($k > $best_block_count || ($k == $best_block_count && $chars > $best_block_chars)) {
+        $best_block_count = $k;
+        $best_block_chars = $chars;
+        $best_offset = $curr_blocks[$curr_idx]->[0];
+        $best = $curr_blocks[$curr_idx + $k - 1]->[1] - $curr_blocks[$curr_idx]->[0] + 1;
+        $best_chars = $chars;
+      }
+    }
+  }
+}
+
 if ($best >= $min_lines && $best_chars >= $min_chars) {
+  if ($profile eq "codex" && $best_offset == $body_start) {
+    my $scan_limit = $body_start + 220;
+    $scan_limit = $#curr if $scan_limit > $#curr;
+    for my $i ($body_start .. $scan_limit) {
+      if ($curr[$i] =~ /Context compacted\b/) {
+        my $extended = $i - $best_offset + 1;
+        if ($extended > $best) {
+          $best = $extended;
+        }
+        last;
+      }
+    }
+  }
+
   my @kept = ();
   if ($body_start > 0) {
     @kept = @curr[0 .. $body_start - 1];
@@ -688,6 +879,49 @@ if ($best >= $min_lines && $best_chars >= $min_chars) {
   @curr = (@kept, @rest);
   $_ = join("\n", @curr);
   $_ .= "\n" if length($_);
+}
+
+if ($profile eq "codex") {
+  my @lines = split /\n/, $_, -1;
+  my $body = 0;
+  for my $i (0 .. $#lines) {
+    next unless $lines[$i] =~ /^===== loglm start /;
+    $body = $i + 1;
+    $body++ while $body < @lines && $lines[$body] eq q{};
+    last;
+  }
+
+  my $first_compacted = -1;
+  my $saw_action = 0;
+  my $scan_limit = $body + 1200;
+  $scan_limit = $#lines if $scan_limit > $#lines;
+  for my $i ($body .. $scan_limit) {
+    my $line = $lines[$i];
+    if ($line =~ /Context compacted\b/) {
+      $first_compacted = $i;
+      last;
+    }
+    if ($line =~ /(?:Ran|Edited|Explored|Searched|List(?:ed)?|Read|Update|Created|Wrote|Waited)\b/) {
+      $saw_action = 1;
+      last;
+    }
+  }
+
+  if ($first_compacted >= 0 && !$saw_action) {
+    my @kept = ();
+    if ($body > 0) {
+      @kept = @lines[0 .. $body - 1];
+    }
+    my @rest = ();
+    if ($first_compacted + 1 <= $#lines) {
+      @rest = @lines[$first_compacted + 1 .. $#lines];
+    }
+    while (@rest && $rest[0] eq q{}) {
+      shift @rest;
+    }
+    $_ = join("\n", @kept, @rest);
+    $_ .= "\n" if length($_);
+  }
 }
 ' "$out_file"
 

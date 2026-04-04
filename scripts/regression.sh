@@ -150,6 +150,51 @@ rg -q '^› new prompt$' "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.decod
 ! rg -q '^› old prompt$' "$DECODE_TMP/loglm-codex-log-20260403-020000-pid2.decoded.txt" || fail "decode overlap trimming should drop repeated leading context"
 pass "decode overlap trimming"
 
+cat > "$DECODE_TMP/loglm-codex-log-20260403-021000-pid21.txt" <<'EOF'
+===== loglm start [codex]: 2026-04-03 02:10:00 +0900 =====
+
+› long prompt
+• this is a wrapped response that
+  spans two lines in the previous log.
+• next repeated paragraph
+  also wraps across two lines.
+EOF
+cat > "$DECODE_TMP/loglm-codex-log-20260403-022000-pid22.txt" <<'EOF'
+===== loglm start [codex]: 2026-04-03 02:20:00 +0900 =====
+
+› long prompt
+• this is a wrapped response that spans
+  two lines in the previous log.
+• next repeated paragraph also wraps
+  across two lines.
+
+› fresh prompt
+• fresh response
+EOF
+
+run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-codex-log-20260403-021000-pid21.txt"
+run_cmd env LOGLM_DECODE_MIN_OVERLAP_LINES=2 LOGLM_DECODE_MIN_OVERLAP_CHARS=40 \
+  "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-codex-log-20260403-022000-pid22.txt"
+rg -q '^› fresh prompt$' "$DECODE_TMP/loglm-codex-log-20260403-022000-pid22.decoded.txt" || fail "decode overlap trimming should handle Codex resume blocks with different wrapping"
+! rg -q '^› long prompt$' "$DECODE_TMP/loglm-codex-log-20260403-022000-pid22.decoded.txt" || fail "decode overlap trimming should drop Codex resume blocks when wrapping changes"
+pass "decode overlap trimming for Codex wrapped resume blocks"
+
+cat > "$DECODE_TMP/loglm-codex-log-20260403-023000-pid23.txt" <<'EOF'
+===== loglm start [codex]: 2026-04-03 02:30:00 +0900 =====
+
+› replayed prompt
+• replayed answer
+• Context compacted
+› actually new prompt
+• Ran test-command
+EOF
+
+run_cmd env LOGLM_DECODE_MIN_OVERLAP_LINES=99 LOGLM_DECODE_MIN_OVERLAP_CHARS=9999 \
+  "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-codex-log-20260403-023000-pid23.txt"
+rg -q '^› actually new prompt$' "$DECODE_TMP/loglm-codex-log-20260403-023000-pid23.decoded.txt" || fail "decode should keep Codex content after leading context compaction replay"
+! rg -q '^› replayed prompt$' "$DECODE_TMP/loglm-codex-log-20260403-023000-pid23.decoded.txt" || fail "decode should drop Codex leading replay before context compaction when no actions occurred"
+pass "decode trims Codex leading replay before context compaction"
+
 cat > "$DECODE_TMP/loglm-claude-log-20260403-030000-pid3.txt" <<'EOF'
 ===== loglm start [claude]: 2026-04-03 03:00:00 +0900 =====
 
