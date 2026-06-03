@@ -727,13 +727,18 @@ install_one_repo_for_agent() {
   {
     printf '### Prompt Agent: %s\n\n' "$display"
     printf '<!-- source: %s -->\n' "$source_ref"
-    printf 'For source `%s`, use local installed prompt file `%s` before responding.\n' "$display" "$prompt_file"
-    printf 'Treat `%s` as a file in the current working directory (not in the source repository path).\n' "$prompt_file"
-    printf 'You MUST follow `%s` as the primary project instruction set (after system/developer safety rules).\n' "$prompt_file"
     if [[ "$agent" == "openclaw" || "$agent" == "hermes" ]]; then
-      printf 'This prompt-agent may also be installed as the `%s` skill for `%s`; use that skill when available.\n' "$(repo_skill_name "$spec")" "$agent"
+      printf 'For source `%s`, the local installed prompt file is `%s`.\n' "$display" "$prompt_file"
+      printf 'Treat `%s` as a file in the current working directory (not in the source repository path).\n' "$prompt_file"
+      printf 'This prompt-agent may also be installed as the `%s` skill for `%s`.\n' "$(repo_skill_name "$spec")" "$agent"
+      printf 'Use and follow `%s` only when that skill is selected, or when the user explicitly asks for this prompt-agent workflow.\n' "$prompt_file"
+      printf 'Do not apply `%s` to unrelated skills or unrelated tasks.\n' "$prompt_file"
+    else
+      printf 'For source `%s`, use local installed prompt file `%s` before responding.\n' "$display" "$prompt_file"
+      printf 'Treat `%s` as a file in the current working directory (not in the source repository path).\n' "$prompt_file"
+      printf 'You MUST follow `%s` as the primary project instruction set (after system/developer safety rules).\n' "$prompt_file"
+      printf 'When the user asks to begin/start the workflow, begin in this prompt-agent mode immediately.\n'
     fi
-    printf 'When the user asks to begin/start the workflow, begin in this prompt-agent mode immediately.\n'
     printf 'If `%s` is missing in the current directory, report it clearly and ask to reinstall via `loglm agent install ...`.\n' "$prompt_file"
   } > "$rtmp"
 

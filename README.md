@@ -109,10 +109,13 @@ Experimental agents:
   also creates a temporary `SKILL.md` wrapper and runs
   `openclaw skills install <skill-dir> --as <repo-name>` when the `openclaw` command
   is available. `AGENTS.md` is still updated with loglm runtime notes and a managed
-  reference block.
+  reference block, but that block tells OpenClaw to follow the prompt file only
+  when the corresponding skill/prompt-agent workflow is selected.
 - For Hermes Agent prompt-agent installation, `loglm agent install ... --agent hermes`
   writes a skill wrapper to `~/.hermes/skills/research/<repo-name>/SKILL.md`.
-  `AGENTS.md` is still updated with loglm runtime notes and a managed reference block.
+  `AGENTS.md` is still updated with loglm runtime notes and a managed reference block,
+  but that block tells Hermes Agent to follow the prompt file only when the
+  corresponding skill/prompt-agent workflow is selected.
   In Hermes, load the skill explicitly if needed with `/skill <repo-name>` or start
   Hermes with `hermes -s <repo-name>`.
 

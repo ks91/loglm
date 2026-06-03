@@ -822,6 +822,7 @@ EOF
 run_cmd env LOGLM_AGENT_INSTALL_NO_LAUNCH=1 LOGLM_CODING_AGENT=codex "$ROOT_DIR/loglm" agent install "$LOCAL_REPO" --agent codex --force
 rg -q "Prompt Agent:" AGENTS.md || fail "managed heading should exist after local install"
 rg -q "LOCAL-AGENT-SRC.md" AGENTS.md || fail "local prompt filename reference should exist"
+rg -q 'You MUST follow `LOCAL-AGENT-SRC.md` as the primary project instruction set' AGENTS.md || fail "Codex prompt-agent block should keep primary instruction wording"
 [[ -f LOCAL-AGENT-SRC.md ]] || fail "local prompt file should be created"
 pass "local source install works"
 
@@ -855,12 +856,16 @@ chmod +x "$TMP_WORK/openclaw"
 run_cmd env LOGLM_AGENT_INSTALL_NO_LAUNCH=1 PATH="$TMP_WORK:$PATH" OPENCLAW_SKILLS_ARGS_OUT="$TMP_WORK/openclaw-skills-args.out" OPENCLAW_SKILL_OUT="$TMP_WORK/openclaw-SKILL.md" "$ROOT_DIR/loglm" agent install "$LOCAL_REPO" --agent openclaw --force
 LOCAL_REPO_CANON="$(cd "$LOCAL_REPO" && pwd -P)"
 rg -q "repo=local:$LOCAL_REPO_CANON agent=openclaw source=AGENT_INSTALL_OPENCLAW.md" AGENTS.md || fail "OpenClaw prompt-agent block should be installed into AGENTS.md"
+rg -q 'Use and follow `LOCAL-AGENT-SRC.md` only when that skill is selected' AGENTS.md || fail "OpenClaw prompt-agent block should be scoped to skill use"
+rg -q 'Do not apply `LOCAL-AGENT-SRC.md` to unrelated skills or unrelated tasks' AGENTS.md || fail "OpenClaw prompt-agent block should avoid unrelated skills"
 rg -q "skills install .*/local-agent-src --as local-agent-src" "$TMP_WORK/openclaw-skills-args.out" || fail "OpenClaw prompt-agent install should call openclaw skills install"
 rg -q '^name: local-agent-src$' "$TMP_WORK/openclaw-SKILL.md" || fail "OpenClaw generated SKILL.md should include skill name"
 rg -q 'Test OpenClaw-specific prompt install' "$TMP_WORK/openclaw-SKILL.md" || fail "OpenClaw generated SKILL.md should include prompt-agent content"
 HERMES_HOME="$TMP_WORK/hermes-home"
 run_cmd env LOGLM_AGENT_INSTALL_NO_LAUNCH=1 HOME="$HERMES_HOME" "$ROOT_DIR/loglm" agent install "$LOCAL_REPO" --agent hermes --force
 rg -q "repo=local:$LOCAL_REPO_CANON agent=hermes source=AGENT_INSTALL_HERMES.md" AGENTS.md || fail "Hermes prompt-agent block should be installed into AGENTS.md"
+rg -q 'Use and follow `LOCAL-AGENT-SRC.md` only when that skill is selected' AGENTS.md || fail "Hermes prompt-agent block should be scoped to skill use"
+rg -q 'Do not apply `LOCAL-AGENT-SRC.md` to unrelated skills or unrelated tasks' AGENTS.md || fail "Hermes prompt-agent block should avoid unrelated skills"
 [[ -f "$HERMES_HOME/.hermes/skills/research/local-agent-src/SKILL.md" ]] || fail "Hermes prompt-agent install should write SKILL.md"
 rg -q '^name: local-agent-src$' "$HERMES_HOME/.hermes/skills/research/local-agent-src/SKILL.md" || fail "Hermes generated SKILL.md should include skill name"
 rg -q 'Test Hermes-specific prompt install' "$HERMES_HOME/.hermes/skills/research/local-agent-src/SKILL.md" || fail "Hermes generated SKILL.md should include prompt-agent content"

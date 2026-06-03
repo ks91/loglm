@@ -46,6 +46,10 @@ Install output model:
   and runs `openclaw skills install ... --as <repo-name>` when the OpenClaw CLI is available.
 - For Hermes Agent, `loglm` also wraps the selected install source as `SKILL.md`
   under `~/.hermes/skills/research/<repo-name>/`.
+- For OpenClaw and Hermes Agent, the `AGENTS.md` reference block is scoped:
+  the agent should follow `<REPO-NAME-UPPER>.md` only when the corresponding
+  skill is selected or when the user explicitly asks for that prompt-agent workflow.
+  It should not force unrelated skills or unrelated tasks to follow the prompt-agent file.
 - Prompt-agent authors SHOULD design content assuming it will be consumed from that shared local file.
 
 Prompt-agent version metadata (recommended):
