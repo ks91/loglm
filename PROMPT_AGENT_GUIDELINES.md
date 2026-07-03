@@ -24,7 +24,8 @@ Place one or more files at repository root:
 - SHOULD provide `AGENT_INSTALL.md` as the shared install source for all coding agents.
 - MAY provide `AGENT_INSTALL_CODEX.md` for codex-specific behavior.
 - MAY provide `AGENT_INSTALL_CLAUDE.md` for claude-specific behavior.
-- MAY provide `AGENT_INSTALL_GEMINI.md` for gemini-specific behavior.
+- MAY provide `AGENT_INSTALL_ANTIGRAVITY.md` for Antigravity-specific behavior.
+- MAY provide `AGENT_INSTALL_GEMINI.md` only as a compatibility fallback for older Google/Gemini prompt-agent sources.
 - MAY provide `AGENT_INSTALL_OPENCLAW.md` for OpenClaw-specific behavior.
 - MAY provide `AGENT_INSTALL_HERMES.md` for Hermes Agent-specific behavior.
 - MAY provide `AGENT_INSTALL_LOCAL_LLM.md` for local-LLM-through-Claude-Code behavior.
@@ -33,7 +34,7 @@ Resolution order:
 
 - codex: `AGENT_INSTALL_CODEX.md` -> `AGENT_INSTALL.md`
 - claude: `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md`
-- gemini: `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
+- antigravity: `AGENT_INSTALL_ANTIGRAVITY.md` -> `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
 - openclaw: `AGENT_INSTALL_OPENCLAW.md` -> `AGENT_INSTALL.md`
 - hermes: `AGENT_INSTALL_HERMES.md` -> `AGENT_INSTALL.md`
 - local-llm: `AGENT_INSTALL_LOCAL_LLM.md` -> `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md`
@@ -42,7 +43,8 @@ Resolution order:
 Install output model:
 
 - `loglm agent install <owner/repo>` stores fetched content into `<REPO-NAME-UPPER>.md` in the current directory.
-- `AGENTS.md` / `CLAUDE.md` / `GEMINI.md` receive managed reference blocks that point to `<REPO-NAME-UPPER>.md`.
+- `AGENTS.md` / `CLAUDE.md` receive managed reference blocks that point to `<REPO-NAME-UPPER>.md`.
+  Antigravity uses `AGENTS.md` as the Google-family target.
   OpenClaw and Hermes Agent currently use `AGENTS.md` as their experimental target.
 - For OpenClaw, `loglm` also wraps the selected install source as a temporary `SKILL.md`
   and runs `openclaw skills install ... --as <repo-name>` when the OpenClaw CLI is available.
@@ -106,11 +108,11 @@ Requirements:
 
 ## 6. Multi-Agent Sync Rules
 
-Define when `CLAUDE.md`, `GEMINI.md`, and experimental `AGENTS.md` consumers should mirror `AGENTS.md`.
+Define when `CLAUDE.md` and experimental `AGENTS.md` consumers should mirror `AGENTS.md`.
 
 - SHOULD keep a single shared core policy in `AGENT_INSTALL.md`.
 - MAY maintain agent-specific files when tool usage, interaction style, or platform notes differ.
-  This includes `AGENT_INSTALL_OPENCLAW.md`, `AGENT_INSTALL_HERMES.md`, and
+  This includes `AGENT_INSTALL_ANTIGRAVITY.md`, `AGENT_INSTALL_OPENCLAW.md`, `AGENT_INSTALL_HERMES.md`, and
   `AGENT_INSTALL_LOCAL_LLM.md` when those runtimes need different instructions.
 - MUST keep `## Non-Negotiable Rules` semantically equivalent across variants.
 - MUST document intentional differences in `README.md` (short diff summary is enough).
@@ -221,12 +223,12 @@ Before publishing, verify:
 
 - [ ] `## Non-Negotiable Rules` exists and is first section.
 - [ ] `AGENT_INSTALL.md` is present (unless intentionally agent-specific only).
-- [ ] Agent-specific files use `AGENT_INSTALL_CODEX.md` / `AGENT_INSTALL_CLAUDE.md` / `AGENT_INSTALL_GEMINI.md` / `AGENT_INSTALL_OPENCLAW.md` / `AGENT_INSTALL_HERMES.md` / `AGENT_INSTALL_LOCAL_LLM.md` naming.
+- [ ] Agent-specific files use `AGENT_INSTALL_CODEX.md` / `AGENT_INSTALL_CLAUDE.md` / `AGENT_INSTALL_ANTIGRAVITY.md` / `AGENT_INSTALL_OPENCLAW.md` / `AGENT_INSTALL_HERMES.md` / `AGENT_INSTALL_LOCAL_LLM.md` naming.
 - [ ] No unresolved placeholders remain.
 - [ ] No `<!-- loglm:begin` or `<!-- loglm:end` markers are present.
 - [ ] No unnecessary filename self-references exist.
 - [ ] No ambiguous phrases like "as needed" or "naturally" remain.
-- [ ] AGENT_INSTALL/AGENTS/CLAUDE/GEMINI/local-llm core rules are aligned (or differences documented).
+- [ ] AGENT_INSTALL/AGENTS/CLAUDE/antigravity/local-llm core rules are aligned (or differences documented).
 - [ ] File encoding is UTF-8 without BOM.
 - [ ] Requirements/Optional Dependencies/Platform Integrations are documented.
 - [ ] Each required item has check/install/verify commands.

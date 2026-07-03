@@ -13,10 +13,10 @@ resolve_lang
 usage() {
   cat <<'EOF'
 Usage:
-  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
-  loglm agent list [--agent codex|claude|gemini|openclaw|hermes|local-llm|all] [--verbose]
-  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
-  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
+  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all]
+  loglm agent list [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all] [--verbose]
+  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all]
+  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all]
 
 Examples:
   loglm agent install ks91/gamer-pat
@@ -101,7 +101,7 @@ target_file_for_agent() {
   case "$1" in
     codex) printf '%s\n' "AGENTS.md" ;;
     claude) printf '%s\n' "CLAUDE.md" ;;
-    gemini) printf '%s\n' "GEMINI.md" ;;
+    antigravity) printf '%s\n' "AGENTS.md" ;;
     openclaw) printf '%s\n' "AGENTS.md" ;;
     hermes) printf '%s\n' "AGENTS.md" ;;
     local-llm) printf '%s\n' "CLAUDE.md" ;;
@@ -126,7 +126,8 @@ source_candidates_for_agent() {
       printf '%s\n' "AGENT_INSTALL_CLAUDE.md"
       printf '%s\n' "AGENT_INSTALL.md"
       ;;
-    gemini)
+    antigravity)
+      printf '%s\n' "AGENT_INSTALL_ANTIGRAVITY.md"
       printf '%s\n' "AGENT_INSTALL_GEMINI.md"
       printf '%s\n' "AGENT_INSTALL.md"
       ;;
@@ -778,7 +779,7 @@ list_installed_blocks() {
   local found=0
   local repo source pav prompt
 
-  for agent in codex claude gemini openclaw hermes local-llm; do
+  for agent in codex claude antigravity openclaw hermes local-llm; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
@@ -827,7 +828,7 @@ remove_repo_from_agent_file() {
 repos_from_files() {
   local scope="$1"
   local file
-  for agent in codex claude gemini openclaw hermes local-llm; do
+  for agent in codex claude antigravity openclaw hermes local-llm; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
@@ -844,7 +845,7 @@ run_install() {
   local installed=0
   local failed=0
 
-  for agent in codex claude gemini openclaw hermes local-llm; do
+  for agent in codex claude antigravity openclaw hermes local-llm; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
@@ -917,7 +918,7 @@ run_runtime_notes() {
   local quiet="$3"
   local agent
 
-  for agent in codex claude gemini openclaw hermes local-llm; do
+  for agent in codex claude antigravity openclaw hermes local-llm; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
@@ -991,10 +992,10 @@ while (($# > 0)); do
 done
 
 case "$SCOPE" in
-  codex|claude|gemini|openclaw|hermes|local-llm|all) ;;
+  codex|claude|antigravity|openclaw|hermes|local-llm|all) ;;
   *)
-    say "--agent は codex/claude/gemini/openclaw/hermes/local-llm/all のいずれかを指定してください。" \
-        "--agent must be one of: codex/claude/gemini/openclaw/hermes/local-llm/all." >&2
+    say "--agent は codex/claude/antigravity/openclaw/hermes/local-llm/all のいずれかを指定してください。" \
+        "--agent must be one of: codex/claude/antigravity/openclaw/hermes/local-llm/all." >&2
     exit 2
     ;;
 esac
@@ -1031,7 +1032,7 @@ case "$SUBCMD" in
           "Invalid source spec: $TARGET_SPEC" >&2
       exit 2
     fi
-    for agent in codex claude gemini openclaw hermes local-llm; do
+    for agent in codex claude antigravity openclaw hermes local-llm; do
       if [[ "$SCOPE" != "all" && "$SCOPE" != "$agent" ]]; then
         continue
       fi

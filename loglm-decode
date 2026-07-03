@@ -93,6 +93,8 @@ decode_raw_to_file() {
       profile="claude"
     elif [[ "$base" == *claude* ]]; then
       profile="claude"
+    elif [[ "$base" == *antigravity* ]]; then
+      profile="gemini"
     elif [[ "$base" == *gemini* ]]; then
       profile="gemini"
     elif [[ "$base" == *openclaw* ]]; then
@@ -858,6 +860,8 @@ trim_overlap_with_previous() {
     profile="claude"
   elif [[ "$base" == *claude* ]]; then
     profile="claude"
+  elif [[ "$base" == *antigravity* ]]; then
+    profile="gemini"
   elif [[ "$base" == *gemini* ]]; then
     profile="gemini"
   elif [[ "$base" == *openclaw* ]]; then

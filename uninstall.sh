@@ -19,6 +19,7 @@ TARGETS=(
   "$SETUP_DIR/agent-codex.sh"
   "$SETUP_DIR/agent-claude.sh"
   "$SETUP_DIR/agent-gemini.sh"
+  "$SETUP_DIR/agent-antigravity.sh"
   "$SETUP_DIR/agent-openclaw.sh"
   "$SETUP_DIR/agent-hermes.sh"
   "$SETUP_DIR/agent-local-llm.sh"

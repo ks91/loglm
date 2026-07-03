@@ -17,7 +17,7 @@ E2E_DIR=""
 usage() {
   cat <<'EOF'
 Usage:
-  bash scripts/regression.sh [--e2e] [--repo <owner/repo>] [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
+  bash scripts/regression.sh [--e2e] [--repo <owner/repo>] [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all]
 
 Options:
   --e2e                Run network E2E checks (install/list/update/remove).
@@ -82,7 +82,7 @@ while (($# > 0)); do
 done
 
 case "$E2E_AGENT" in
-  codex|claude|gemini|openclaw|hermes|local-llm|all) ;;
+  codex|claude|antigravity|openclaw|hermes|local-llm|all) ;;
   *)
     echo "invalid --agent: $E2E_AGENT" >&2
     exit 2
@@ -102,7 +102,7 @@ run_cmd bash -n \
 run_cmd bash -n \
   "$ROOT_DIR/setup/agent-codex.sh" \
   "$ROOT_DIR/setup/agent-claude.sh" \
-  "$ROOT_DIR/setup/agent-gemini.sh" \
+  "$ROOT_DIR/setup/agent-antigravity.sh" \
   "$ROOT_DIR/setup/agent-openclaw.sh" \
   "$ROOT_DIR/setup/agent-hermes.sh" \
   "$ROOT_DIR/setup/agent-local-llm.sh"
@@ -759,6 +759,12 @@ exit 0
 EOF
 chmod +x "$EXPERIMENTAL_TMP/bin/openclaw"
 
+cat > "$EXPERIMENTAL_TMP/bin/agy" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$EXPERIMENTAL_TMP/bin/agy"
+
 cat > "$EXPERIMENTAL_TMP/bin/hermes" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -786,6 +792,17 @@ fi
 exit 0
 EOF
 chmod +x "$EXPERIMENTAL_TMP/bin/curl"
+
+(
+  cd "$EXPERIMENTAL_WORK"
+  printf 'antigravity\n' > .loglm_agent
+  HOME="$EXPERIMENTAL_TMP/home" \
+    PATH="$EXPERIMENTAL_TMP/bin:$PATH" \
+    LOGLM_TEST_SCRIPT_ARGS="$EXPERIMENTAL_TMP/antigravity-script-args.out" \
+    "$ROOT_DIR/loglm" >/tmp/loglm-test-antigravity-launch.out 2>/tmp/loglm-test-antigravity-launch.err
+)
+rg -q '^.*agy$' "$EXPERIMENTAL_TMP/antigravity-script-args.out" || fail "Antigravity launch should use agy command"
+rg -q 'loglm Platform Notes' "$EXPERIMENTAL_WORK/AGENTS.md" || fail "Antigravity launch should create AGENTS.md runtime notes"
 
 (
   cd "$EXPERIMENTAL_WORK"

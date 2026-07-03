@@ -14,16 +14,16 @@ LOGLM_HOME="${LOGLM_HOME:-$HOME/.local/share/loglm}"
 SETUP_DIR=""
 LOGLM_VERSION="0.2.3-dev"
 
-SUPPORTED_AGENTS=(codex claude gemini openclaw hermes local-llm)
+SUPPORTED_AGENTS=(codex claude antigravity openclaw hermes local-llm)
 
 usage() {
   cat <<'EOF'
 Usage:
   loglm [options]
-  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
-  loglm agent list [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
-  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
-  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
+  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all]
+  loglm agent list [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all]
+  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all]
+  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|antigravity|openclaw|hermes|local-llm|all]
 
 Options:
   --new
@@ -31,7 +31,7 @@ Options:
   --resume
       Open the agent's built-in session picker.
   --agent
-      Re-select the AI coding agent (codex / claude / gemini / openclaw / hermes / local-llm).
+      Re-select the AI coding agent (codex / claude / antigravity / openclaw / hermes / local-llm).
   --local-llm-url <url>
       Set the Anthropic-compatible local LLM gateway URL for local-llm.
       Default: http://127.0.0.1:8080
@@ -44,8 +44,7 @@ Options:
       Start the agent in dangerous/no-approval mode:
         codex  : --dangerously-bypass-approvals-and-sandbox
         claude/local-llm: --dangerously-skip-permissions
-        gemini : --yolo
-        openclaw/hermes: no dangerous-mode flag is passed by loglm yet
+        openclaw/antigravity/hermes: no dangerous-mode flag is passed by loglm yet
   -h, --help
       Show this help.
   -v, --version
@@ -53,7 +52,7 @@ Options:
 
 Subcommands:
   agent ...
-      Manage prompt-agent blocks in AGENTS.md / CLAUDE.md / GEMINI.md.
+      Manage prompt-agent blocks in AGENTS.md / CLAUDE.md.
 EOF
 }
 
@@ -79,6 +78,10 @@ ensure_agent_installed() {
     if command -v claude > /dev/null 2>&1 && command -v llama-server > /dev/null 2>&1; then
       return 0
     fi
+  elif [[ "$agent" == "antigravity" ]]; then
+    if command -v agy > /dev/null 2>&1 || command -v antigravity > /dev/null 2>&1; then
+      return 0
+    fi
   elif command -v "$agent" > /dev/null 2>&1; then
     return 0
   fi
@@ -91,6 +94,18 @@ ensure_agent_installed() {
   fi
 
   "$SETUP_DIR/ensure-agent.sh" "$agent"
+}
+
+antigravity_command() {
+  if command -v agy > /dev/null 2>&1; then
+    printf '%s\n' "agy"
+    return 0
+  fi
+  if command -v antigravity > /dev/null 2>&1; then
+    printf '%s\n' "antigravity"
+    return 0
+  fi
+  return 1
 }
 
 normalize_local_llm_url() {
@@ -571,15 +586,17 @@ case "$AGENT" in
     )
     ;;
 
-  gemini)
-    BASE_CMD=(gemini)
+  antigravity)
+    BASE_CMD=("$(antigravity_command)")
     if [[ "$DANGEROUS_MODE" -eq 1 ]]; then
-      BASE_CMD+=(--yolo)
+      echo "Warning: --dangerous is not mapped for Antigravity yet; launching normally." >&2
     fi
     if [[ "$FORCE_NEW" -eq 1 ]]; then
       AGENT_CMD=("${BASE_CMD[@]}")
+    elif [[ "$CHOOSE_RESUME" -eq 1 ]]; then
+      AGENT_CMD=("${BASE_CMD[@]}")
     else
-      AGENT_CMD=("${BASE_CMD[@]}" --resume)
+      AGENT_CMD=("${BASE_CMD[@]}")
     fi
     ;;
 

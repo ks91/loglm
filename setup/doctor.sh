@@ -30,9 +30,14 @@ if [[ "$AGENT" == "claude" ]]; then
       "Note: Claude Code may recommend native installation on some environments."
 fi
 
-if [[ "$AGENT" == "openclaw" || "$AGENT" == "hermes" || "$AGENT" == "local-llm" ]]; then
+if [[ "$AGENT" == "openclaw" || "$AGENT" == "antigravity" || "$AGENT" == "hermes" || "$AGENT" == "local-llm" ]]; then
   say "注意: $AGENT の loglm サポートは experimental です。" \
       "Note: loglm support for $AGENT is experimental."
+fi
+
+if [[ "$AGENT" == "antigravity" ]]; then
+  say "注意: loglm は Google 系エージェントとして Antigravity CLI を使います。Gemini CLI は個人向け環境で利用できない場合があります。" \
+      "Note: loglm uses Antigravity CLI as the Google-family agent. Gemini CLI may no longer work for individual accounts."
 fi
 
 if [[ "$AGENT" == "local-llm" ]]; then

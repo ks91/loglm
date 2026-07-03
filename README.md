@@ -1,5 +1,5 @@
 # loglm
-Logged launcher for AI coding agents: Codex, Claude Code, Gemini, OpenClaw,
+Logged launcher for AI coding agents: Codex, Claude Code, Antigravity, OpenClaw,
 Hermes Agent, and Local LLM via Claude Code.
 
 ## Install
@@ -68,7 +68,7 @@ loglm
 - agent-specific instruction notes for the selected coding agent:
   - `AGENTS.md` for Codex
   - `CLAUDE.md` for Claude Code
-  - `GEMINI.md` for Gemini
+  - `AGENTS.md` for Antigravity (Google/Gemini family, experimental)
   - `AGENTS.md` for OpenClaw (experimental)
   - `AGENTS.md` for Hermes Agent (experimental)
   - `CLAUDE.md` for Local LLM via Claude Code (experimental)
@@ -82,7 +82,7 @@ The managed instruction notes tell the coding agent that it may be running throu
 where logs are stored, and how to use `loglm-decode` and `loglm-timeline` when asked to
 inspect previous work.
 
-If the selected agent command is missing (`codex`, `claude`, `gemini`, `openclaw`, `hermes`, or `local-llm`),
+If the selected agent command is missing (`codex`, `claude`, `antigravity`, `openclaw`, `hermes`, or `local-llm`),
 `loglm` prompts and runs an installer from `~/.local/share/loglm/setup`.
 Before agent install, `doctor.sh` runs base checks (such as `script` command availability).
 On macOS, setup prefers Homebrew for agent installation when a brew package is available;
@@ -95,6 +95,11 @@ If `~/.npmrc` has incompatible `prefix`/`globalconfig` entries, setup adjusts th
 
 Experimental agents:
 
+- Antigravity is launched as `agy` (falling back to `antigravity` when needed).
+  - If missing on macOS, setup installs the Homebrew cask `antigravity-cli`.
+  - loglm treats Antigravity as the Google/Gemini-family coding agent.
+  - Gemini CLI is no longer a supported launch target in loglm because individual
+    Gemini CLI authentication may redirect to Antigravity.
 - OpenClaw is launched as `openclaw tui --local`.
   - If missing, setup runs the official OpenClaw installer script.
   - OpenClaw requires Node.js 22+; the official installer handles Node detection/installation.
@@ -116,7 +121,7 @@ Experimental agents:
     KV-cache slowdown caused by Claude Code attribution headers.
   - Start with `llama-server --ctx-size 32768`; use `8192` on small machines and
     `65536` or larger only when memory allows.
-- OpenClaw, Hermes Agent, and Local LLM support is experimental in loglm v0.2.x.
+- Antigravity, OpenClaw, Hermes Agent, and Local LLM support is experimental in loglm v0.2.x.
 - Experimental support is intended for macOS native and Ubuntu-family environments
   (Ubuntu, Ubuntu on Lima, and Ubuntu on WSL2), but actual installation depends on
   the upstream official installers.
@@ -173,15 +178,15 @@ LOGLM_LANG=both loglm
 
 - `--new`: Start a new context (ignore saved session).
 - `--resume`: Open the agent's built-in session picker.
-- For Gemini, default launch uses `gemini --resume`; `--new` starts a new session.
-  If context is not restored as expected, run `/resume` (or `/chat resume`) inside Gemini after launch.
+- For Antigravity, default launch uses `agy` (or `antigravity` fallback).
+  `--new` currently launches the same command because Antigravity session flags are not mapped yet.
 - For OpenClaw, default launch uses `openclaw tui --local`; `--new` starts a distinct `loglm-...` session key.
 - For Hermes Agent, default launch uses `hermes --continue` when a previous
   Hermes CLI session is found; otherwise it launches `hermes` normally.
   `--new` launches `hermes` without `--continue`.
 - For Local LLM, default launch uses Claude Code resume behavior (`claude --continue`
   when Claude Code history exists). `--new` starts a new Claude Code context.
-- `--agent`: Re-select the AI coding agent (`codex` / `claude` / `gemini` / `openclaw` / `hermes` / `local-llm`).
+- `--agent`: Re-select the AI coding agent (`codex` / `claude` / `antigravity` / `openclaw` / `hermes` / `local-llm`).
 - `--local-llm-url <url>`: Set the per-directory local LLM gateway URL
   (default: `http://127.0.0.1:8080`).
 - `--local-llm-model <name>`: Override the per-directory model name passed to
@@ -191,8 +196,7 @@ LOGLM_LANG=both loglm
 - `-X`, `--dangerous`: Start the agent in dangerous/no-approval mode.
   - `codex`: `--dangerously-bypass-approvals-and-sandbox`
   - `claude` / `local-llm`: `--dangerously-skip-permissions`
-  - `gemini`: `--yolo`
-  - `openclaw` / `hermes`: no dangerous-mode flag is passed by loglm yet
+  - `antigravity` / `openclaw` / `hermes`: no dangerous-mode flag is passed by loglm yet
 - `-h`, `--help`: Show help.
 - `-v`, `--version`: Show loglm version.
 
@@ -216,14 +220,14 @@ Supported repository spec:
 
 Supported options:
 
-- `--agent codex|claude|gemini|openclaw|hermes|local-llm|all` (default: current `./.loglm_agent`)
+- `--agent codex|claude|antigravity|openclaw|hermes|local-llm|all` (default: current `./.loglm_agent`)
 - `--verbose` (for `list`): show prompt file and prompt-agent version metadata
 
 File mapping:
 
 - codex source -> `AGENT_INSTALL_CODEX.md` -> `AGENT_INSTALL.md`
 - claude source -> `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md`
-- gemini source -> `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
+- antigravity source -> `AGENT_INSTALL_ANTIGRAVITY.md` -> `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md` (experimental)
 - openclaw source -> `AGENT_INSTALL_OPENCLAW.md` -> `AGENT_INSTALL.md` (experimental)
 - hermes source -> `AGENT_INSTALL_HERMES.md` -> `AGENT_INSTALL.md` (experimental)
 - local-llm source -> `AGENT_INSTALL_LOCAL_LLM.md` -> `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md` (experimental)
@@ -245,12 +249,12 @@ Behavior:
 
 - `install` downloads prompt content into `<REPO-NAME-UPPER>.md` in the current directory
   (example: `ks91/gamer-pat` -> `GAMER-PAT.md`).
-- `install` appends/updates managed reference blocks in `AGENTS.md` / `CLAUDE.md` / `GEMINI.md`
+- `install` appends/updates managed reference blocks in `AGENTS.md` / `CLAUDE.md`
   that point to `<REPO-NAME-UPPER>.md`, instead of replacing whole files.
 - Each installed prompt-agent block includes a small heading (`### Prompt Agent: <owner/repo>`)
   for readability.
 - Managed reference blocks include strong instructions (`MUST read`, `MUST follow`) for consistency
-  across codex / claude / gemini / openclaw / hermes / local-llm.
+  across codex / claude / antigravity / openclaw / hermes / local-llm.
 - Multiple repositories can be installed into the same file.
 - A platform block is maintained automatically (macOS / WSL2 / Ubuntu on Lima / etc.).
 - A common execution-policy block is maintained automatically (escalation-first on permission/sandbox failures).
@@ -385,7 +389,7 @@ bash scripts/regression.sh --e2e --repo ks91/gamer-pat --agent codex
 - `~/.local/share/loglm/setup/lib.sh`
 - `~/.local/share/loglm/setup/agent-codex.sh`
 - `~/.local/share/loglm/setup/agent-claude.sh`
-- `~/.local/share/loglm/setup/agent-gemini.sh`
+- `~/.local/share/loglm/setup/agent-antigravity.sh`
 - `~/.local/share/loglm/setup/agent-openclaw.sh`
 - `~/.local/share/loglm/setup/agent-hermes.sh`
 - `~/.local/share/loglm/setup/agent-local-llm.sh`
