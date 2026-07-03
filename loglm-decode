@@ -89,7 +89,9 @@ decode_raw_to_file() {
   profile="${LOGLM_DECODE_PROFILE:-auto}"
   if [[ "$profile" == "auto" ]]; then
     base="$(basename "$in_file" | tr '[:upper:]' '[:lower:]')"
-    if [[ "$base" == *claude* ]]; then
+    if [[ "$base" == *local-llm* ]]; then
+      profile="claude"
+    elif [[ "$base" == *claude* ]]; then
       profile="claude"
     elif [[ "$base" == *gemini* ]]; then
       profile="gemini"
@@ -760,12 +762,12 @@ find_previous_log_in_series() {
   dir="$(dirname "$in_file")"
   base="$(basename "$in_file")"
 
-  if [[ ! "$base" =~ ^(loglm-[^-]+-log-).+\.txt$ ]]; then
+  if [[ ! "$base" =~ ^(loglm-.+-log-).+\.txt$ ]]; then
     return 1
   fi
   prefix="${BASH_REMATCH[1]}"
   current_session=""
-  if [[ "$base" == loglm-claude-log-* ]]; then
+  if [[ "$base" == loglm-claude-log-* || "$base" == loglm-local-llm-log-* ]]; then
     current_session="$(extract_claude_resume_id "$in_file")"
   fi
 
@@ -807,7 +809,9 @@ trim_overlap_with_previous() {
 
   profile="default"
   base="$(basename "$in_file" | tr '[:upper:]' '[:lower:]')"
-  if [[ "$base" == *claude* ]]; then
+  if [[ "$base" == *local-llm* ]]; then
+    profile="claude"
+  elif [[ "$base" == *claude* ]]; then
     profile="claude"
   elif [[ "$base" == *gemini* ]]; then
     profile="gemini"

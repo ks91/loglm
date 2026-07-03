@@ -17,7 +17,7 @@ E2E_DIR=""
 usage() {
   cat <<'EOF'
 Usage:
-  bash scripts/regression.sh [--e2e] [--repo <owner/repo>] [--agent codex|claude|gemini|openclaw|hermes|all]
+  bash scripts/regression.sh [--e2e] [--repo <owner/repo>] [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
 
 Options:
   --e2e                Run network E2E checks (install/list/update/remove).
@@ -82,7 +82,7 @@ while (($# > 0)); do
 done
 
 case "$E2E_AGENT" in
-  codex|claude|gemini|openclaw|hermes|all) ;;
+  codex|claude|gemini|openclaw|hermes|local-llm|all) ;;
   *)
     echo "invalid --agent: $E2E_AGENT" >&2
     exit 2
@@ -104,7 +104,8 @@ run_cmd bash -n \
   "$ROOT_DIR/setup/agent-claude.sh" \
   "$ROOT_DIR/setup/agent-gemini.sh" \
   "$ROOT_DIR/setup/agent-openclaw.sh" \
-  "$ROOT_DIR/setup/agent-hermes.sh"
+  "$ROOT_DIR/setup/agent-hermes.sh" \
+  "$ROOT_DIR/setup/agent-local-llm.sh"
 pass "shell syntax checks"
 
 # 2) Help output
@@ -740,6 +741,28 @@ exit 0
 EOF
 chmod +x "$EXPERIMENTAL_TMP/bin/hermes"
 
+cat > "$EXPERIMENTAL_TMP/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$EXPERIMENTAL_TMP/bin/claude"
+
+cat > "$EXPERIMENTAL_TMP/bin/llama-server" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$EXPERIMENTAL_TMP/bin/llama-server"
+
+cat > "$EXPERIMENTAL_TMP/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+last="${@: -1}"
+if [[ "$last" == */v1/models ]]; then
+  printf '%s\n' '{"object":"list","data":[{"id":"qwen3.5:35b","object":"model"}]}'
+fi
+exit 0
+EOF
+chmod +x "$EXPERIMENTAL_TMP/bin/curl"
+
 (
   cd "$EXPERIMENTAL_WORK"
   printf 'openclaw\n' > .loglm_agent
@@ -773,6 +796,25 @@ touch "$EXPERIMENTAL_TMP/home/.hermes/sessions/20260531_191136_d1cd26"
     "$ROOT_DIR/loglm" >/tmp/loglm-test-hermes-launch-resume.out 2>/tmp/loglm-test-hermes-launch-resume.err
 )
 rg -q 'hermes --continue' "$EXPERIMENTAL_TMP/hermes-script-args.out" || fail "Hermes launch should resume when a previous session exists"
+
+LOCAL_LLM_WORK="$EXPERIMENTAL_TMP/local-llm-work"
+mkdir -p "$LOCAL_LLM_WORK"
+(
+  cd "$LOCAL_LLM_WORK"
+  printf 'local-llm\n' > .loglm_agent
+  HOME="$EXPERIMENTAL_TMP/home" \
+    PATH="$EXPERIMENTAL_TMP/bin:$PATH" \
+    LOGLM_TEST_SCRIPT_ARGS="$EXPERIMENTAL_TMP/local-llm-script-args.out" \
+    "$ROOT_DIR/loglm" --local-llm-url http://127.0.0.1:18080 >/tmp/loglm-test-local-llm-launch.out 2>/tmp/loglm-test-local-llm-launch.err
+)
+rg -q 'ANTHROPIC_BASE_URL=http://127.0.0.1:18080' "$EXPERIMENTAL_TMP/local-llm-script-args.out" || fail "local-llm launch should set ANTHROPIC_BASE_URL"
+rg -q 'ANTHROPIC_AUTH_TOKEN=loglm-local-llm' "$EXPERIMENTAL_TMP/local-llm-script-args.out" || fail "local-llm launch should set a local auth token"
+rg -q 'CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1' "$EXPERIMENTAL_TMP/local-llm-script-args.out" || fail "local-llm launch should disable experimental betas for gateway compatibility"
+rg -q 'claude --model qwen3.5:35b' "$EXPERIMENTAL_TMP/local-llm-script-args.out" || fail "local-llm launch should run Claude Code with requested model"
+rg -q '^http://127.0.0.1:18080$' "$LOCAL_LLM_WORK/.loglm_local_llm" || fail "local-llm URL should be saved in project config"
+rg -q '^qwen3.5:35b$' "$LOCAL_LLM_WORK/.loglm_local_llm_model" || fail "local-llm model should be detected and saved in project config"
+[[ -f "$LOCAL_LLM_WORK/CLAUDE.md" ]] || fail "local-llm launch should create CLAUDE.md runtime notes"
+rg -q '"CLAUDE_CODE_ATTRIBUTION_HEADER" : "0"' "$LOCAL_LLM_WORK/.claude/settings.local.json" || fail "local-llm launch should disable Claude Code attribution header in local settings"
 pass "experimental agent launch commands"
 
 # 8) Managed block list/remove behavior
@@ -842,6 +884,12 @@ cat > "$LOCAL_REPO/AGENT_INSTALL_HERMES.md" <<'EOF'
 ## Non-Negotiable Rules
 - Test Hermes-specific prompt install.
 EOF
+cat > "$LOCAL_REPO/AGENT_INSTALL_LOCAL_LLM.md" <<'EOF'
+# Local LLM Prompt
+
+## Non-Negotiable Rules
+- Test local-llm-specific prompt install.
+EOF
 
 cat > "$TMP_WORK/openclaw" <<'EOF'
 #!/usr/bin/env bash
@@ -869,6 +917,10 @@ rg -q 'Do not apply `LOCAL-AGENT-SRC.md` to unrelated skills or unrelated tasks'
 [[ -f "$HERMES_HOME/.hermes/skills/research/local-agent-src/SKILL.md" ]] || fail "Hermes prompt-agent install should write SKILL.md"
 rg -q '^name: local-agent-src$' "$HERMES_HOME/.hermes/skills/research/local-agent-src/SKILL.md" || fail "Hermes generated SKILL.md should include skill name"
 rg -q 'Test Hermes-specific prompt install' "$HERMES_HOME/.hermes/skills/research/local-agent-src/SKILL.md" || fail "Hermes generated SKILL.md should include prompt-agent content"
+run_cmd env LOGLM_AGENT_INSTALL_NO_LAUNCH=1 "$ROOT_DIR/loglm" agent install "$LOCAL_REPO" --agent local-llm --force
+rg -q "repo=local:$LOCAL_REPO_CANON agent=local-llm source=AGENT_INSTALL_LOCAL_LLM.md" CLAUDE.md || fail "local-llm prompt-agent block should be installed into CLAUDE.md"
+rg -q 'This session is Claude Code routed through a local LLM gateway by loglm' CLAUDE.md || fail "local-llm prompt-agent block should mention Claude Code local gateway runtime"
+rg -q 'Test local-llm-specific prompt install' LOCAL-AGENT-SRC.md || fail "local-llm prompt file should use local-llm-specific source"
 pass "experimental agent prompt install works"
 
 # 9) Update validation

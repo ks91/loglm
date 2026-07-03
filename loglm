@@ -5,6 +5,8 @@ set -euo pipefail
 WORK_DIR="$(pwd -P)"
 LOG_DIR="$WORK_DIR/logs"
 AGENT_FILE="$WORK_DIR/.loglm_agent"
+LOCAL_LLM_FILE="$WORK_DIR/.loglm_local_llm"
+LOCAL_LLM_MODEL_FILE="$WORK_DIR/.loglm_local_llm_model"
 TODAY_LOCAL="$(date +%Y%m%d)"
 NOW_LOCAL="$(date +%Y%m%d-%H%M%S)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,16 +14,16 @@ LOGLM_HOME="${LOGLM_HOME:-$HOME/.local/share/loglm}"
 SETUP_DIR=""
 LOGLM_VERSION="0.2.3-dev"
 
-SUPPORTED_AGENTS=(codex claude gemini openclaw hermes)
+SUPPORTED_AGENTS=(codex claude gemini openclaw hermes local-llm)
 
 usage() {
   cat <<'EOF'
 Usage:
   loglm [options]
-  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|all]
-  loglm agent list [--agent codex|claude|gemini|openclaw|hermes|all]
-  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|all]
-  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|openclaw|hermes|all]
+  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
+  loglm agent list [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
+  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
+  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
 
 Options:
   --new
@@ -29,14 +31,19 @@ Options:
   --resume
       Open the agent's built-in session picker.
   --agent
-      Re-select the AI coding agent (codex / claude / gemini / openclaw / hermes).
+      Re-select the AI coding agent (codex / claude / gemini / openclaw / hermes / local-llm).
+  --local-llm-url <url>
+      Set the Anthropic-compatible local LLM gateway URL for local-llm.
+      Default: http://127.0.0.1:8080
+  --local-llm-model <name>
+      Set the model name passed to Claude Code with --model for local-llm.
   --daily-log
       Use one log file per day (legacy behavior).
       By default, loglm creates a unique file per launch (timestamp + PID).
   -X, --dangerous
       Start the agent in dangerous/no-approval mode:
         codex  : --dangerously-bypass-approvals-and-sandbox
-        claude : --dangerously-skip-permissions
+        claude/local-llm: --dangerously-skip-permissions
         gemini : --yolo
         openclaw/hermes: no dangerous-mode flag is passed by loglm yet
   -h, --help
@@ -68,7 +75,11 @@ resolve_setup_dir() {
 
 ensure_agent_installed() {
   local agent="$1"
-  if command -v "$agent" > /dev/null 2>&1; then
+  if [[ "$agent" == "local-llm" ]]; then
+    if command -v claude > /dev/null 2>&1 && command -v llama-server > /dev/null 2>&1; then
+      return 0
+    fi
+  elif command -v "$agent" > /dev/null 2>&1; then
     return 0
   fi
 
@@ -80,6 +91,150 @@ ensure_agent_installed() {
   fi
 
   "$SETUP_DIR/ensure-agent.sh" "$agent"
+}
+
+normalize_local_llm_url() {
+  local url="$1"
+  url="${url%/}"
+  if [[ -z "$url" ]]; then
+    url="http://127.0.0.1:8080"
+  fi
+  printf '%s\n' "$url"
+}
+
+configure_local_llm_url() {
+  local current="${LOGLM_LOCAL_LLM_URL:-}"
+  if [[ -z "$current" && -f "$LOCAL_LLM_FILE" ]]; then
+    current="$(head -n 1 "$LOCAL_LLM_FILE" | tr -d '[:space:]')"
+  fi
+  current="$(normalize_local_llm_url "${current:-http://127.0.0.1:8080}")"
+
+  if [[ "${LOGLM_LOCAL_LLM_URL_SET:-0}" == "1" ]]; then
+    LOCAL_LLM_URL="$current"
+    printf '%s\n' "$LOCAL_LLM_URL" > "$LOCAL_LLM_FILE"
+    return
+  fi
+
+  if [[ ! -f "$LOCAL_LLM_FILE" ]]; then
+    printf 'Local LLM gateway URL [%s]: ' "$current"
+    local answer
+    read -r answer
+    LOCAL_LLM_URL="$(normalize_local_llm_url "${answer:-$current}")"
+    printf '%s\n' "$LOCAL_LLM_URL" > "$LOCAL_LLM_FILE"
+  else
+    LOCAL_LLM_URL="$current"
+  fi
+}
+
+configure_local_llm_model() {
+  local current="${LOGLM_LOCAL_LLM_MODEL:-}"
+  if [[ -z "$current" && -f "$LOCAL_LLM_MODEL_FILE" ]]; then
+    current="$(head -n 1 "$LOCAL_LLM_MODEL_FILE" | tr -d '[:space:]')"
+  fi
+
+  if [[ "${LOGLM_LOCAL_LLM_MODEL_SET:-0}" == "1" ]]; then
+    LOCAL_LLM_MODEL="$current"
+    printf '%s\n' "$LOCAL_LLM_MODEL" > "$LOCAL_LLM_MODEL_FILE"
+    return
+  fi
+
+  if [[ -z "$current" ]]; then
+    current="$(discover_local_llm_model "$LOCAL_LLM_URL" || true)"
+    if [[ -n "$current" ]]; then
+      printf '%s\n' "$current" > "$LOCAL_LLM_MODEL_FILE"
+      echo "Detected local LLM model: $current" >&2
+    else
+      echo "Warning: could not detect local LLM model from $LOCAL_LLM_URL/v1/models; launching without --model." >&2
+    fi
+  fi
+
+  LOCAL_LLM_MODEL="$current"
+}
+
+discover_local_llm_model() {
+  local url="$1"
+  command -v curl > /dev/null 2>&1 || return 1
+  curl -fsS --max-time 2 "$url/v1/models" 2>/dev/null | perl -MJSON::PP -0777 -e '
+    my $text = <STDIN>;
+    my $data = eval { decode_json($text) } or exit 1;
+    if (ref($data->{data}) eq "ARRAY") {
+      for my $item (@{$data->{data}}) {
+        next unless ref($item) eq "HASH";
+        if (defined $item->{id} && $item->{id} ne "") {
+          print "$item->{id}\n";
+          exit 0;
+        }
+      }
+    }
+    exit 1;
+  '
+}
+
+check_local_llm_endpoint() {
+  local url="$1"
+  if ! command -v curl > /dev/null 2>&1; then
+    echo "Warning: curl not found; skipping local LLM endpoint check." >&2
+    return 0
+  fi
+  if curl -fsS --max-time 2 "$url/health" > /dev/null 2>&1; then
+    return 0
+  fi
+  if curl -fsS --max-time 2 "$url/" > /dev/null 2>&1; then
+    return 0
+  fi
+  echo "Error: local LLM gateway is not reachable: $url" >&2
+  echo "Start llama-server separately, then rerun loglm." >&2
+  echo "Example: llama-server -m /path/to/model.gguf --ctx-size 32768 --host 127.0.0.1 --port 8080" >&2
+  return 1
+}
+
+exclude_local_claude_settings_from_git() {
+  local git_dir exclude_file
+  git_dir="$(git rev-parse --git-dir 2>/dev/null || true)"
+  [[ -n "$git_dir" ]] || return 0
+  exclude_file="$git_dir/info/exclude"
+  [[ -f "$exclude_file" && -w "$exclude_file" ]] || return 0
+  if ! grep -Fqx ".claude/settings.local.json" "$exclude_file"; then
+    printf '\n# Added by loglm local-llm\n.claude/settings.local.json\n' >> "$exclude_file"
+  fi
+}
+
+ensure_local_llm_claude_settings() {
+  local settings tmp
+  settings="$WORK_DIR/.claude/settings.local.json"
+  mkdir -p "$WORK_DIR/.claude"
+  if [[ -x /usr/bin/mktemp ]]; then
+    tmp="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/loglm-claude-settings.XXXXXX")"
+  else
+    tmp="$(mktemp "${TMPDIR:-/tmp}/loglm-claude-settings.XXXXXX")"
+  fi
+
+  if [[ -f "$settings" ]]; then
+    if ! perl -MJSON::PP -0777 -e '
+      my $path = shift;
+      my $text = <STDIN>;
+      my $data = decode_json($text);
+      $data->{env} = {} unless ref($data->{env}) eq "HASH";
+      $data->{env}->{CLAUDE_CODE_ATTRIBUTION_HEADER} = "0";
+      my $json = JSON::PP->new->canonical->pretty->encode($data);
+      print $json;
+    ' "$settings" < "$settings" > "$tmp"; then
+      rm -f "$tmp"
+      echo "Warning: could not update $settings; invalid JSON may disable local-llm KV-cache optimization." >&2
+      return 0
+    fi
+  else
+    cat > "$tmp" <<'EOF'
+{
+   "env" : {
+      "CLAUDE_CODE_ATTRIBUTION_HEADER" : "0"
+   }
+}
+EOF
+  fi
+
+  mv "$tmp" "$settings"
+  exclude_local_claude_settings_from_git
 }
 
 ensure_runtime_notes() {
@@ -257,6 +412,10 @@ CHOOSE_RESUME=0
 DANGEROUS_MODE=0
 CHOOSE_AGENT=0
 DAILY_LOG=0
+LOCAL_LLM_URL=""
+LOCAL_LLM_MODEL=""
+LOGLM_LOCAL_LLM_URL_SET=0
+LOGLM_LOCAL_LLM_MODEL_SET=0
 
 while (($# > 0)); do
   case "$1" in
@@ -271,6 +430,24 @@ while (($# > 0)); do
     --agent)
       CHOOSE_AGENT=1
       shift
+      ;;
+    --local-llm-url)
+      if (($# < 2)); then
+        echo "Error: --local-llm-url requires a value." >&2
+        exit 2
+      fi
+      LOGLM_LOCAL_LLM_URL="$(normalize_local_llm_url "$2")"
+      LOGLM_LOCAL_LLM_URL_SET=1
+      shift 2
+      ;;
+    --local-llm-model)
+      if (($# < 2)); then
+        echo "Error: --local-llm-model requires a value." >&2
+        exit 2
+      fi
+      LOGLM_LOCAL_LLM_MODEL="$2"
+      LOGLM_LOCAL_LLM_MODEL_SET=1
+      shift 2
       ;;
     --daily-log)
       DAILY_LOG=1
@@ -324,6 +501,13 @@ fi
 ensure_agent_installed "$AGENT"
 ensure_runtime_notes "$AGENT"
 
+if [[ "$AGENT" == "local-llm" ]]; then
+  configure_local_llm_url
+  configure_local_llm_model
+  ensure_local_llm_claude_settings
+  check_local_llm_endpoint "$LOCAL_LLM_URL"
+fi
+
 if [[ "$DAILY_LOG" -eq 1 ]]; then
   LOG_FILE="$LOG_DIR/loglm-${AGENT}-log-${TODAY_LOCAL}.txt"
 else
@@ -359,6 +543,32 @@ case "$AGENT" in
     else
       AGENT_CMD=("${BASE_CMD[@]}")
     fi
+    ;;
+
+  local-llm)
+    BASE_CMD=(claude)
+    if [[ -n "$LOCAL_LLM_MODEL" ]]; then
+      BASE_CMD+=(--model "$LOCAL_LLM_MODEL")
+    fi
+    if [[ "$DANGEROUS_MODE" -eq 1 ]]; then
+      BASE_CMD+=(--dangerously-skip-permissions)
+    fi
+    if [[ "$FORCE_NEW" -eq 1 ]]; then
+      AGENT_CMD=("${BASE_CMD[@]}")
+    elif [[ "$CHOOSE_RESUME" -eq 1 ]]; then
+      AGENT_CMD=("${BASE_CMD[@]}" --resume)
+    elif claude_has_history; then
+      AGENT_CMD=("${BASE_CMD[@]}" --continue)
+    else
+      AGENT_CMD=("${BASE_CMD[@]}")
+    fi
+    AGENT_CMD=(
+      env
+      "ANTHROPIC_BASE_URL=$LOCAL_LLM_URL"
+      "ANTHROPIC_AUTH_TOKEN=${LOGLM_LOCAL_LLM_AUTH_TOKEN:-loglm-local-llm}"
+      "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1"
+      "${AGENT_CMD[@]}"
+    )
     ;;
 
   gemini)

@@ -30,7 +30,12 @@ if [[ "$AGENT" == "claude" ]]; then
       "Note: Claude Code may recommend native installation on some environments."
 fi
 
-if [[ "$AGENT" == "openclaw" || "$AGENT" == "hermes" ]]; then
+if [[ "$AGENT" == "openclaw" || "$AGENT" == "hermes" || "$AGENT" == "local-llm" ]]; then
   say "注意: $AGENT の loglm サポートは experimental です。" \
       "Note: loglm support for $AGENT is experimental."
+fi
+
+if [[ "$AGENT" == "local-llm" ]]; then
+  say "local-llm は Claude Code と Anthropic 互換のローカル gateway を使います。" \
+      "local-llm uses Claude Code and a local Anthropic-compatible gateway."
 fi

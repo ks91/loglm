@@ -114,6 +114,7 @@ install_executable "setup/agent-claude.sh" "$SETUP_DIR/agent-claude.sh"
 install_executable "setup/agent-gemini.sh" "$SETUP_DIR/agent-gemini.sh"
 install_executable "setup/agent-openclaw.sh" "$SETUP_DIR/agent-openclaw.sh"
 install_executable "setup/agent-hermes.sh" "$SETUP_DIR/agent-hermes.sh"
+install_executable "setup/agent-local-llm.sh" "$SETUP_DIR/agent-local-llm.sh"
 
 echo "Installed: $BIN_DIR/loglm"
 echo "Installed: $BIN_DIR/loglm-decode"

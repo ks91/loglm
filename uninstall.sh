@@ -21,6 +21,7 @@ TARGETS=(
   "$SETUP_DIR/agent-gemini.sh"
   "$SETUP_DIR/agent-openclaw.sh"
   "$SETUP_DIR/agent-hermes.sh"
+  "$SETUP_DIR/agent-local-llm.sh"
 )
 
 removed=0

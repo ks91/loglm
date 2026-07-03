@@ -27,6 +27,7 @@ Place one or more files at repository root:
 - MAY provide `AGENT_INSTALL_GEMINI.md` for gemini-specific behavior.
 - MAY provide `AGENT_INSTALL_OPENCLAW.md` for OpenClaw-specific behavior.
 - MAY provide `AGENT_INSTALL_HERMES.md` for Hermes Agent-specific behavior.
+- MAY provide `AGENT_INSTALL_LOCAL_LLM.md` for local-LLM-through-Claude-Code behavior.
 
 Resolution order:
 
@@ -35,6 +36,7 @@ Resolution order:
 - gemini: `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
 - openclaw: `AGENT_INSTALL_OPENCLAW.md` -> `AGENT_INSTALL.md`
 - hermes: `AGENT_INSTALL_HERMES.md` -> `AGENT_INSTALL.md`
+- local-llm: `AGENT_INSTALL_LOCAL_LLM.md` -> `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md`
 - `loglm` reads only the first existing file in this order for each agent (no merge).
 
 Install output model:
@@ -50,6 +52,9 @@ Install output model:
   the agent should follow `<REPO-NAME-UPPER>.md` only when the corresponding
   skill is selected or when the user explicitly asks for that prompt-agent workflow.
   It should not force unrelated skills or unrelated tasks to follow the prompt-agent file.
+- For local-llm, `CLAUDE.md` is updated because the runtime is Claude Code routed
+  through a local Anthropic-compatible gateway. Use `AGENT_INSTALL_LOCAL_LLM.md`
+  only when local model limitations or tool/search behavior require different instructions.
 - Prompt-agent authors SHOULD design content assuming it will be consumed from that shared local file.
 
 Prompt-agent version metadata (recommended):
@@ -105,7 +110,8 @@ Define when `CLAUDE.md`, `GEMINI.md`, and experimental `AGENTS.md` consumers sho
 
 - SHOULD keep a single shared core policy in `AGENT_INSTALL.md`.
 - MAY maintain agent-specific files when tool usage, interaction style, or platform notes differ.
-  This includes `AGENT_INSTALL_OPENCLAW.md` and `AGENT_INSTALL_HERMES.md` when those TUIs need different instructions.
+  This includes `AGENT_INSTALL_OPENCLAW.md`, `AGENT_INSTALL_HERMES.md`, and
+  `AGENT_INSTALL_LOCAL_LLM.md` when those runtimes need different instructions.
 - MUST keep `## Non-Negotiable Rules` semantically equivalent across variants.
 - MUST document intentional differences in `README.md` (short diff summary is enough).
 
@@ -215,12 +221,12 @@ Before publishing, verify:
 
 - [ ] `## Non-Negotiable Rules` exists and is first section.
 - [ ] `AGENT_INSTALL.md` is present (unless intentionally agent-specific only).
-- [ ] Agent-specific files use `AGENT_INSTALL_CODEX.md` / `AGENT_INSTALL_CLAUDE.md` / `AGENT_INSTALL_GEMINI.md` / `AGENT_INSTALL_OPENCLAW.md` / `AGENT_INSTALL_HERMES.md` naming.
+- [ ] Agent-specific files use `AGENT_INSTALL_CODEX.md` / `AGENT_INSTALL_CLAUDE.md` / `AGENT_INSTALL_GEMINI.md` / `AGENT_INSTALL_OPENCLAW.md` / `AGENT_INSTALL_HERMES.md` / `AGENT_INSTALL_LOCAL_LLM.md` naming.
 - [ ] No unresolved placeholders remain.
 - [ ] No `<!-- loglm:begin` or `<!-- loglm:end` markers are present.
 - [ ] No unnecessary filename self-references exist.
 - [ ] No ambiguous phrases like "as needed" or "naturally" remain.
-- [ ] AGENT_INSTALL/AGENTS/CLAUDE/GEMINI core rules are aligned (or differences documented).
+- [ ] AGENT_INSTALL/AGENTS/CLAUDE/GEMINI/local-llm core rules are aligned (or differences documented).
 - [ ] File encoding is UTF-8 without BOM.
 - [ ] Requirements/Optional Dependencies/Platform Integrations are documented.
 - [ ] Each required item has check/install/verify commands.

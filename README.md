@@ -1,5 +1,6 @@
 # loglm
-Logged launcher for AI coding agents: Claude Code, Codex, Gemini, OpenClaw, and Hermes Agent.
+Logged launcher for AI coding agents: Codex, Claude Code, Gemini, OpenClaw,
+Hermes Agent, and Local LLM via Claude Code.
 
 ## Install
 
@@ -70,8 +71,9 @@ loglm
   - `GEMINI.md` for Gemini
   - `AGENTS.md` for OpenClaw (experimental)
   - `AGENTS.md` for Hermes Agent (experimental)
+  - `CLAUDE.md` for Local LLM via Claude Code (experimental)
 
-Both are scoped to the directory where you run `loglm`.
+These files are scoped to the directory where you run `loglm`.
 By default, each launch writes to a unique log file:
 
 - `logs/loglm-<agent>-log-YYYYMMDD-HHMMSS-pid<PID>.txt`
@@ -80,7 +82,7 @@ The managed instruction notes tell the coding agent that it may be running throu
 where logs are stored, and how to use `loglm-decode` and `loglm-timeline` when asked to
 inspect previous work.
 
-If the selected agent command is missing (`codex`, `claude`, `gemini`, `openclaw`, or `hermes`),
+If the selected agent command is missing (`codex`, `claude`, `gemini`, `openclaw`, `hermes`, or `local-llm`),
 `loglm` prompts and runs an installer from `~/.local/share/loglm/setup`.
 Before agent install, `doctor.sh` runs base checks (such as `script` command availability).
 On macOS, setup prefers Homebrew for agent installation when a brew package is available;
@@ -99,12 +101,35 @@ Experimental agents:
 - Hermes Agent is launched as `hermes`.
   - If missing, setup runs the official Hermes Agent installer script.
   - The official installer handles dependencies such as uv, Python, Node.js, ripgrep, and ffmpeg.
-- OpenClaw and Hermes Agent support is experimental in loglm v0.2.x.
+- Local LLM is launched as Claude Code routed to a local Anthropic-compatible gateway.
+  - If missing, setup installs/checks Claude Code and `llama-server`.
+  - `loglm` does not start `llama-server`; start it separately before launching `loglm`.
+  - The default gateway URL is `http://127.0.0.1:8080`.
+  - Configure per directory with `loglm --local-llm-url http://127.0.0.1:8080`.
+  - If no model is configured, `loglm` tries to detect one from
+    `<local-llm-url>/v1/models` and saves it in `./.loglm_local_llm_model`.
+  - If your gateway needs an explicit override, use
+    `loglm --local-llm-model <model-or-alias>`. For llama.cpp, this should match
+    the `llama-server --alias ...` value when you use one.
+  - `loglm` writes `.claude/settings.local.json` with
+    `CLAUDE_CODE_ATTRIBUTION_HEADER=0` for this project to avoid llama.cpp
+    KV-cache slowdown caused by Claude Code attribution headers.
+  - Start with `llama-server --ctx-size 32768`; use `8192` on small machines and
+    `65536` or larger only when memory allows.
+- OpenClaw, Hermes Agent, and Local LLM support is experimental in loglm v0.2.x.
 - Experimental support is intended for macOS native and Ubuntu-family environments
   (Ubuntu, Ubuntu on Lima, and Ubuntu on WSL2), but actual installation depends on
   the upstream official installers.
 - In `loglm`, `hermes` is the command/agent id for Hermes Agent. It refers to the
   Hermes Agent CLI/TUI project, not to the Hermes model family.
+- In `loglm`, `local-llm` is an experimental agent id. It runs the `claude` command
+  with `ANTHROPIC_BASE_URL` pointing to the local gateway. This depends on the
+  gateway implementing the Anthropic Messages API well enough for Claude Code.
+  Routing Claude Code to non-Claude local models is experimental and not an
+  Anthropic-supported configuration.
+- Claude Web Search is not available through this local LLM route. For lightweight
+  web search, consider a DuckDuckGo-based MCP/search tool; SearXNG, Brave Search,
+  or Tavily-backed tools are other options when you need stronger control or APIs.
 - For OpenClaw prompt-agent installation, `loglm agent install ... --agent openclaw`
   also creates a temporary `SKILL.md` wrapper and runs
   `openclaw skills install <skill-dir> --as <repo-name>` when the `openclaw` command
@@ -145,11 +170,18 @@ LOGLM_LANG=both loglm
 - For Hermes Agent, default launch uses `hermes --continue` when a previous
   Hermes CLI session is found; otherwise it launches `hermes` normally.
   `--new` launches `hermes` without `--continue`.
-- `--agent`: Re-select the AI coding agent (`codex` / `claude` / `gemini` / `openclaw` / `hermes`).
+- For Local LLM, default launch uses Claude Code resume behavior (`claude --continue`
+  when Claude Code history exists). `--new` starts a new Claude Code context.
+- `--agent`: Re-select the AI coding agent (`codex` / `claude` / `gemini` / `openclaw` / `hermes` / `local-llm`).
+- `--local-llm-url <url>`: Set the per-directory local LLM gateway URL
+  (default: `http://127.0.0.1:8080`).
+- `--local-llm-model <name>`: Override the per-directory model name passed to
+  Claude Code as `claude --model <name>` for Local LLM. If omitted, `loglm`
+  tries `<local-llm-url>/v1/models`.
 - `--daily-log`: Use one log file per day (legacy behavior).
 - `-X`, `--dangerous`: Start the agent in dangerous/no-approval mode.
   - `codex`: `--dangerously-bypass-approvals-and-sandbox`
-  - `claude`: `--dangerously-skip-permissions`
+  - `claude` / `local-llm`: `--dangerously-skip-permissions`
   - `gemini`: `--yolo`
   - `openclaw` / `hermes`: no dangerous-mode flag is passed by loglm yet
 - `-h`, `--help`: Show help.
@@ -175,7 +207,7 @@ Supported repository spec:
 
 Supported options:
 
-- `--agent codex|claude|gemini|openclaw|hermes|all` (default: current `./.loglm_agent`)
+- `--agent codex|claude|gemini|openclaw|hermes|local-llm|all` (default: current `./.loglm_agent`)
 - `--verbose` (for `list`): show prompt file and prompt-agent version metadata
 
 File mapping:
@@ -185,6 +217,7 @@ File mapping:
 - gemini source -> `AGENT_INSTALL_GEMINI.md` -> `AGENT_INSTALL.md`
 - openclaw source -> `AGENT_INSTALL_OPENCLAW.md` -> `AGENT_INSTALL.md` (experimental)
 - hermes source -> `AGENT_INSTALL_HERMES.md` -> `AGENT_INSTALL.md` (experimental)
+- local-llm source -> `AGENT_INSTALL_LOCAL_LLM.md` -> `AGENT_INSTALL_CLAUDE.md` -> `AGENT_INSTALL.md` (experimental)
 - `loglm` uses only the first existing file in that order (no merge).
 - For local source paths, the same file mapping/rules apply.
 
@@ -208,7 +241,7 @@ Behavior:
 - Each installed prompt-agent block includes a small heading (`### Prompt Agent: <owner/repo>`)
   for readability.
 - Managed reference blocks include strong instructions (`MUST read`, `MUST follow`) for consistency
-  across codex / claude / gemini / openclaw / hermes.
+  across codex / claude / gemini / openclaw / hermes / local-llm.
 - Multiple repositories can be installed into the same file.
 - A platform block is maintained automatically (macOS / WSL2 / Ubuntu on Lima / etc.).
 - A common execution-policy block is maintained automatically (escalation-first on permission/sandbox failures).
@@ -346,6 +379,7 @@ bash scripts/regression.sh --e2e --repo ks91/gamer-pat --agent codex
 - `~/.local/share/loglm/setup/agent-gemini.sh`
 - `~/.local/share/loglm/setup/agent-openclaw.sh`
 - `~/.local/share/loglm/setup/agent-hermes.sh`
+- `~/.local/share/loglm/setup/agent-local-llm.sh`
 
 Environment variables:
 

@@ -13,10 +13,10 @@ resolve_lang
 usage() {
   cat <<'EOF'
 Usage:
-  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|all]
-  loglm agent list [--agent codex|claude|gemini|openclaw|hermes|all] [--verbose]
-  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|all]
-  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|openclaw|hermes|all]
+  loglm agent install <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
+  loglm agent list [--agent codex|claude|gemini|openclaw|hermes|local-llm|all] [--verbose]
+  loglm agent remove <github_repo_or_url|local_repo_path> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
+  loglm agent update <github_repo_or_url|local_repo_path|--all> [--agent codex|claude|gemini|openclaw|hermes|local-llm|all]
 
 Examples:
   loglm agent install ks91/gamer-pat
@@ -104,6 +104,7 @@ target_file_for_agent() {
     gemini) printf '%s\n' "GEMINI.md" ;;
     openclaw) printf '%s\n' "AGENTS.md" ;;
     hermes) printf '%s\n' "AGENTS.md" ;;
+    local-llm) printf '%s\n' "CLAUDE.md" ;;
     *)
       return 1
       ;;
@@ -117,6 +118,11 @@ source_candidates_for_agent() {
       printf '%s\n' "AGENT_INSTALL.md"
       ;;
     claude)
+      printf '%s\n' "AGENT_INSTALL_CLAUDE.md"
+      printf '%s\n' "AGENT_INSTALL.md"
+      ;;
+    local-llm)
+      printf '%s\n' "AGENT_INSTALL_LOCAL_LLM.md"
       printf '%s\n' "AGENT_INSTALL_CLAUDE.md"
       printf '%s\n' "AGENT_INSTALL.md"
       ;;
@@ -733,6 +739,12 @@ install_one_repo_for_agent() {
       printf 'This prompt-agent may also be installed as the `%s` skill for `%s`.\n' "$(repo_skill_name "$spec")" "$agent"
       printf 'Use and follow `%s` only when that skill is selected, or when the user explicitly asks for this prompt-agent workflow.\n' "$prompt_file"
       printf 'Do not apply `%s` to unrelated skills or unrelated tasks.\n' "$prompt_file"
+    elif [[ "$agent" == "local-llm" ]]; then
+      printf 'For source `%s`, use local installed prompt file `%s` before responding.\n' "$display" "$prompt_file"
+      printf 'Treat `%s` as a file in the current working directory (not in the source repository path).\n' "$prompt_file"
+      printf 'This session is Claude Code routed through a local LLM gateway by loglm; the prompt-agent instructions still apply as Claude Code project instructions.\n'
+      printf 'You MUST follow `%s` as the primary project instruction set (after system/developer safety rules).\n' "$prompt_file"
+      printf 'When the user asks to begin/start the workflow, begin in this prompt-agent mode immediately.\n'
     else
       printf 'For source `%s`, use local installed prompt file `%s` before responding.\n' "$display" "$prompt_file"
       printf 'Treat `%s` as a file in the current working directory (not in the source repository path).\n' "$prompt_file"
@@ -766,7 +778,7 @@ list_installed_blocks() {
   local found=0
   local repo source pav prompt
 
-  for agent in codex claude gemini openclaw hermes; do
+  for agent in codex claude gemini openclaw hermes local-llm; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
@@ -815,7 +827,7 @@ remove_repo_from_agent_file() {
 repos_from_files() {
   local scope="$1"
   local file
-  for agent in codex claude gemini openclaw hermes; do
+  for agent in codex claude gemini openclaw hermes local-llm; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
@@ -832,7 +844,7 @@ run_install() {
   local installed=0
   local failed=0
 
-  for agent in codex claude gemini openclaw hermes; do
+  for agent in codex claude gemini openclaw hermes local-llm; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
@@ -905,7 +917,7 @@ run_runtime_notes() {
   local quiet="$3"
   local agent
 
-  for agent in codex claude gemini openclaw hermes; do
+  for agent in codex claude gemini openclaw hermes local-llm; do
     if [[ "$scope" != "all" && "$scope" != "$agent" ]]; then
       continue
     fi
@@ -979,10 +991,10 @@ while (($# > 0)); do
 done
 
 case "$SCOPE" in
-  codex|claude|gemini|openclaw|hermes|all) ;;
+  codex|claude|gemini|openclaw|hermes|local-llm|all) ;;
   *)
-    say "--agent は codex/claude/gemini/openclaw/hermes/all のいずれかを指定してください。" \
-        "--agent must be one of: codex/claude/gemini/openclaw/hermes/all." >&2
+    say "--agent は codex/claude/gemini/openclaw/hermes/local-llm/all のいずれかを指定してください。" \
+        "--agent must be one of: codex/claude/gemini/openclaw/hermes/local-llm/all." >&2
     exit 2
     ;;
 esac
@@ -1019,7 +1031,7 @@ case "$SUBCMD" in
           "Invalid source spec: $TARGET_SPEC" >&2
       exit 2
     fi
-    for agent in codex claude gemini openclaw hermes; do
+    for agent in codex claude gemini openclaw hermes local-llm; do
       if [[ "$SCOPE" != "all" && "$SCOPE" != "$agent" ]]; then
         continue
       fi
