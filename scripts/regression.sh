@@ -801,7 +801,7 @@ chmod +x "$EXPERIMENTAL_TMP/bin/curl"
     LOGLM_TEST_SCRIPT_ARGS="$EXPERIMENTAL_TMP/antigravity-script-args.out" \
     "$ROOT_DIR/loglm" >/tmp/loglm-test-antigravity-launch.out 2>/tmp/loglm-test-antigravity-launch.err
 )
-rg -q '^.*agy$' "$EXPERIMENTAL_TMP/antigravity-script-args.out" || fail "Antigravity launch should use agy command"
+rg -q '^.*agy -c$' "$EXPERIMENTAL_TMP/antigravity-script-args.out" || fail "Antigravity default launch should continue with agy -c"
 rg -q 'loglm Platform Notes' "$EXPERIMENTAL_WORK/AGENTS.md" || fail "Antigravity launch should create AGENTS.md runtime notes"
 
 (

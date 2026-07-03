@@ -94,7 +94,7 @@ decode_raw_to_file() {
     elif [[ "$base" == *claude* ]]; then
       profile="claude"
     elif [[ "$base" == *antigravity* ]]; then
-      profile="gemini"
+      profile="antigravity"
     elif [[ "$base" == *gemini* ]]; then
       profile="gemini"
     elif [[ "$base" == *openclaw* ]]; then
@@ -136,6 +136,7 @@ my $col = 0;
 my $profile = $ENV{LOGLM_DECODE_PROFILE} // q{};
 my $is_claude = ($profile eq "claude") ? 1 : 0;
 my $is_gemini = ($profile eq "gemini") ? 1 : 0;
+my $is_antigravity = ($profile eq "antigravity") ? 1 : 0;
 my $is_openclaw = ($profile eq "openclaw") ? 1 : 0;
 my $is_hermes = ($profile eq "hermes") ? 1 : 0;
 
@@ -370,12 +371,16 @@ if ($is_claude) {
       $i++;
     }
   }
-} elsif ($is_gemini) {
+} elsif ($is_gemini || $is_antigravity) {
   my @normalized = ();
   my $pending_prompt;
   my $last_emitted_prompt;
   my $in_notice_block = 0;
   my $in_slash_menu = 0;
+  my $in_antigravity_setup = 0;
+  my %recent_seen = ();
+  my @recent_keys = ();
+  my %seen_prompts = ();
 
   for my $raw (@lines) {
     my $line = $raw;
@@ -390,6 +395,23 @@ if ($is_claude) {
       $line =~ s/\s+$//;
     } else {
       $line =~ s/\s+$//;
+    }
+
+    if ($is_antigravity) {
+      $line =~ s/^\s+//;
+      $line =~ s/\s+$//;
+
+      if ($line =~ /^(?:Welcome to the Antigravity CLI\. You are currently not signed in\.|Select login method:|Terms of Service & Data Use|Accessing workspace:|Do you trust the contents of this project\?)/) {
+        $in_antigravity_setup = 1;
+        next;
+      }
+      if ($in_antigravity_setup) {
+        if ($line =~ /^Antigravity CLI\s+[0-9.]+/) {
+          $in_antigravity_setup = 0;
+        } else {
+          next;
+        }
+      }
     }
 
     if ($in_notice_block) {
@@ -416,6 +438,47 @@ if ($is_claude) {
     # Drop frequent transient UI lines.
     if (
       $line eq q{} ||
+      ($is_antigravity && $line =~ /^Antigravity CLI\s+[0-9.]+$/) ||
+      ($is_antigravity && $line =~ /^Gemini\s+[0-9.]+\s+\S+\s+\([^)]+\)$/) ||
+      ($is_antigravity && $line =~ /^\S+@\S+\s*(?:\(Google AI Pro\))?$/) ||
+      ($is_antigravity && $line =~ /^\(Google AI Pro\)$/) ||
+      ($is_antigravity && $line =~ /^~\//) ||
+      ($is_antigravity && $line =~ /^Welcome to Antigravity CLI!$/) ||
+      ($is_antigravity && $line =~ /^Welcome to the Antigravity CLI/) ||
+      ($is_antigravity && $line =~ /^Your browser should open automatically\. If not:$/) ||
+      ($is_antigravity && $line =~ /^https:\/\/accounts\.google\.com\/o\/oauth2\/auth/) ||
+      ($is_antigravity && $line =~ /^[A-Za-z0-9_=&%.:+\/-]{40,}$/) ||
+      ($is_antigravity && $line =~ /^id&state=/) ||
+      ($is_antigravity && $line =~ /^If you aren.t automatically redirected, paste the authorization code below:$/) ||
+      ($is_antigravity && $line =~ /^authorization code\.\.\.$/) ||
+      ($is_antigravity && $line =~ /^\[Use arrow keys to navigate, Enter to select\]/) ||
+      ($is_antigravity && $line =~ /^\[Next\]$/) ||
+      ($is_antigravity && $line =~ /^\[Previous\]\s+\[Done\]$/) ||
+      ($is_antigravity && $line =~ /^Links:$/) ||
+      ($is_antigravity && $line =~ /^-\s+(?:Terms of Service|Privacy Policy):\s+https?:\/\//) ||
+      ($is_antigravity && $line =~ /^>\s*\d+\.\s+(?:Google OAuth|Use a Google Cloud project|Yes)$/) ||
+      ($is_antigravity && $line =~ /^>\s*\[x\]\s+Yes, I agree/) ||
+      ($is_antigravity && $line =~ /^(?:Google to collect|subject to the Google|and Google Privacy|choose to opt out|settings\.)/) ||
+      ($is_antigravity && $line =~ /^Yes, I trust this folder$/) ||
+      ($is_antigravity && $line =~ /\x{fffd}/u) ||
+      ($is_antigravity && $line =~ /^file:\/\//) ||
+      ($is_antigravity && $line =~ /^\(?file:\/\/\/?/) ||
+      ($is_antigravity && $line =~ /file:\/\/\//) ||
+      ($is_antigravity && $line =~ /^[\w.-]+\](?:\(|$)/) ||
+      ($is_antigravity && $line =~ /^(?:umes|s91|e\/ks91|academia|md\]|context\]|pubtechd|chd)\b/) ||
+      ($is_antigravity && $line =~ /^(?:Generating|Working|Running|Considering|Analyzing|Organizing|Requesting|Genera|enerate|enerat|eratin|rating|ating|ing|ng|ra|ne|ki|ga|en|ne|or|t|i|xcontext|No matche)\.?\s*$/i) ||
+      ($is_antigravity && $line =~ /^[[:alpha:]]{1,12}(?:\s+\(\s*\d+(?:\.\d+)?s\))?$/) ||
+      ($is_antigravity && length($line) <= 8 && $line !~ /^[>●○▸•#]/ && $line !~ /\d{4}/) ||
+      ($is_antigravity && $line =~ /^(?:light|dark|solarized light|solarized dark|colorblind-friendly light|colorblind-friendly dark)$/) ||
+      ($is_antigravity && $line =~ /^(?:└ Tip:|Tip:|↑\/↓ Navigate|Do you want to proceed\?)/) ||
+      ($is_antigravity && $line =~ /^(?:Command|Full command:|Requesting permission for:)$/) ||
+      ($is_antigravity && $line =~ /^\d+\.\s+Yes, and always allow/) ||
+      ($is_antigravity && $line =~ /^\d+\.\s+No$/) ||
+      ($is_antigravity && $line =~ /^↓\s+\d+\s+more$/) ||
+      ($is_antigravity && $line =~ m{^/[a-z][a-z0-9-]*\s+}) ||
+      ($is_antigravity && $line =~ /^[a-z][a-z0-9-]*\s+.+(?:background tasks|custom agents|release notes|workspace|context usage)/) ||
+      ($is_antigravity && $line =~ /^[│╰─]+$/) ||
+      ($is_antigravity && $line =~ /^[·◉✗⚠→★⚙]\s+(?:tool|task|error|warning|link|accent|dim):/) ||
       $line =~ /Waiting for auth/i ||
       $line =~ /Gemini CLI update available!/ ||
       $line =~ /Installed via Homebrew\./ ||
@@ -467,7 +530,10 @@ if ($is_claude) {
         (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
         (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
       ) {
-        push @normalized, "> $pending_prompt";
+        if (!$is_antigravity || !$seen_prompts{$pending_prompt}) {
+          push @normalized, "> $pending_prompt";
+          $seen_prompts{$pending_prompt} = 1 if $is_antigravity;
+        }
         $last_emitted_prompt = $pending_prompt;
       }
       $pending_prompt = $p;
@@ -496,13 +562,34 @@ if ($is_claude) {
         (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
         (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
       ) {
-        push @normalized, "> $pending_prompt";
+        if (!$is_antigravity || !$seen_prompts{$pending_prompt}) {
+          push @normalized, "> $pending_prompt";
+          $seen_prompts{$pending_prompt} = 1 if $is_antigravity;
+        }
         $last_emitted_prompt = $pending_prompt;
       }
       undef $pending_prompt;
     }
     if (defined $last_emitted_prompt && $line eq $last_emitted_prompt) {
       next;
+    }
+
+    if ($is_antigravity) {
+      my $key = $line;
+      $key =~ s/\s+/ /g;
+      $key =~ s/^\s+//;
+      $key =~ s/\s+$//;
+      if ($key ne q{} && $recent_seen{$key}) {
+        next;
+      }
+      if ($key ne q{}) {
+        $recent_seen{$key} = 1;
+        push @recent_keys, $key;
+        if (@recent_keys > 240) {
+          my $old = shift @recent_keys;
+          delete $recent_seen{$old};
+        }
+      }
     }
 
     push @normalized, $line;
@@ -514,7 +601,9 @@ if ($is_claude) {
       (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
       (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
     ) {
-      push @normalized, "> $pending_prompt";
+      if (!$is_antigravity || !$seen_prompts{$pending_prompt}) {
+        push @normalized, "> $pending_prompt";
+      }
     }
   }
 
@@ -755,7 +844,7 @@ for my $line (@merged) {
       $cmp = "(status)";
       $line_out = "(status)";
     }
-  } elsif ($is_gemini || $is_openclaw || $is_hermes) {
+  } elsif ($is_gemini || $is_antigravity || $is_openclaw || $is_hermes) {
     $cmp =~ s/^\s+//;
     $cmp =~ s/\s+$//;
     # Startup banner art is mostly decorative and very noisy.
@@ -861,7 +950,7 @@ trim_overlap_with_previous() {
   elif [[ "$base" == *claude* ]]; then
     profile="claude"
   elif [[ "$base" == *antigravity* ]]; then
-    profile="gemini"
+    profile="antigravity"
   elif [[ "$base" == *gemini* ]]; then
     profile="gemini"
   elif [[ "$base" == *openclaw* ]]; then

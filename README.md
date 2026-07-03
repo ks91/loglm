@@ -95,7 +95,7 @@ If `~/.npmrc` has incompatible `prefix`/`globalconfig` entries, setup adjusts th
 
 Experimental agents:
 
-- Antigravity is launched as `agy` (falling back to `antigravity` when needed).
+- Antigravity is launched as `agy -c` by default (falling back to `antigravity -c` when needed).
   - If missing on macOS, setup installs the Homebrew cask `antigravity-cli`.
   - loglm treats Antigravity as the Google/Gemini-family coding agent.
   - Gemini CLI is no longer a supported launch target in loglm because individual
@@ -178,8 +178,8 @@ LOGLM_LANG=both loglm
 
 - `--new`: Start a new context (ignore saved session).
 - `--resume`: Open the agent's built-in session picker.
-- For Antigravity, default launch uses `agy` (or `antigravity` fallback).
-  `--new` currently launches the same command because Antigravity session flags are not mapped yet.
+- For Antigravity, default launch uses `agy -c` (or `antigravity -c` fallback) to continue the previous conversation.
+  `--new` launches `agy` without `-c`.
 - For OpenClaw, default launch uses `openclaw tui --local`; `--new` starts a distinct `loglm-...` session key.
 - For Hermes Agent, default launch uses `hermes --continue` when a previous
   Hermes CLI session is found; otherwise it launches `hermes` normally.

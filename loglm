@@ -594,9 +594,9 @@ case "$AGENT" in
     if [[ "$FORCE_NEW" -eq 1 ]]; then
       AGENT_CMD=("${BASE_CMD[@]}")
     elif [[ "$CHOOSE_RESUME" -eq 1 ]]; then
-      AGENT_CMD=("${BASE_CMD[@]}")
+      AGENT_CMD=("${BASE_CMD[@]}" -c)
     else
-      AGENT_CMD=("${BASE_CMD[@]}")
+      AGENT_CMD=("${BASE_CMD[@]}" -c)
     fi
     ;;
 
