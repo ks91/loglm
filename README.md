@@ -130,6 +130,15 @@ Experimental agents:
 - Claude Web Search is not available through this local LLM route. For lightweight
   web search, consider a DuckDuckGo-based MCP/search tool; SearXNG, Brave Search,
   or Tavily-backed tools are other options when you need stronger control or APIs.
+  DuckDuckGo MCP is optional; if the chosen server is Python-based, install
+  `uv`/`uvx` first and add it as a local Claude Code MCP server, for example:
+
+  ```bash
+  brew install uv
+  claude mcp add --scope local ddg-search -- "$(command -v uvx)" duckduckgo-mcp-server
+  ```
+
+  Then restart `loglm` and check the server with `/mcp` inside Claude Code.
 - For OpenClaw prompt-agent installation, `loglm agent install ... --agent openclaw`
   also creates a temporary `SKILL.md` wrapper and runs
   `openclaw skills install <skill-dir> --as <repo-name>` when the `openclaw` command
