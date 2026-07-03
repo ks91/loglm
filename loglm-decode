@@ -701,11 +701,13 @@ for my $line (@merged) {
   if ($is_claude) {
     $cmp =~ s/^\s+//;
     $cmp =~ s/\s+$//;
+    my $is_prompt_line = ($cmp =~ /^[❯>›]\s*\S/) ? 1 : 0;
     if ($cmp =~ /\(thinking\)/) {
       $cmp = "(thinking)";
       $line_out = "(thinking)";
     }
     if (
+      !$is_prompt_line &&
       $cmp ne "(thinking)" &&
       length($cmp) <= 80 &&
       $cmp =~ /ing/i &&
@@ -716,6 +718,7 @@ for my $line (@merged) {
     }
     $cmp = "(spinner)" if $cmp =~ /^[·✢✳✶✻✽⏺]+$/;
     if (
+      !$is_prompt_line &&
       defined $prev_cmp &&
       $prev_cmp eq "(status)" &&
       $cmp =~ /^[[:alpha:][:space:]…-]{1,24}$/
@@ -724,6 +727,7 @@ for my $line (@merged) {
       $line_out = "(status)";
     }
     if (
+      !$is_prompt_line &&
       defined $prev_cmp &&
       ($prev_cmp eq "(status)" || $prev_cmp eq "(spinner)" || $prev_cmp eq "(thinking)") &&
       $cmp =~ /[[:alpha:]]/ &&
@@ -733,6 +737,7 @@ for my $line (@merged) {
       $line_out = "(status)";
     }
     if (
+      !$is_prompt_line &&
       $cmp =~ /[[:alpha:]][[:space:]]+[[:alpha:]]/ &&
       length($cmp) <= 24 &&
       $cmp =~ /^[·✢✳✶✻✽⏺[:space:][:alnum:]…-]+$/

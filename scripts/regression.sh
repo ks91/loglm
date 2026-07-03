@@ -244,6 +244,16 @@ rg -q '^❯ loglm って知ってる？$' "$DECODE_TMP/loglm-claude-log-20260501
 pass "decode Claude prompt redraw after CR cursor movement"
 
 {
+  printf '===== loglm start [claude]: 2026-05-01 14:35:00 +0900 =====\n\n'
+  printf '\r\033[4A\033[48;2;240;240;240m\033[38;2;175;175;175m❯ \033[38;2;0;0;0mJust checking again.\033[39m                                                          \r\033[1B\033[49m\033[K\r\033[1B\033[38;2;215;119;87m✽\033[39m \033[38;2;215;119;87mMoseying… \033[39m\033[K\r\033[2C\033[1B\033[K\r\r\n'
+} > "$DECODE_TMP/loglm-claude-log-20260501-143500-pid29338.txt"
+
+run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-claude-log-20260501-143500-pid29338.txt"
+rg -q '^❯ Just checking again\.$' "$DECODE_TMP/loglm-claude-log-20260501-143500-pid29338.decoded.txt" || fail "decode should keep Claude prompt lines containing ing words"
+! rg -q '^\(status\)$' "$DECODE_TMP/loglm-claude-log-20260501-143500-pid29338.decoded.txt" || fail "decode should not collapse prompt lines containing ing words into status"
+pass "decode keeps Claude prompt lines containing ing words"
+
+{
   printf '===== loglm start [claude]: 2026-05-01 14:40:00 +0900 =====\n\n'
   printf '\033[38;2;102;102;102mThinking for \033[1m16s\033[22m… \033[38;2;102;102;102m(ctrl+o to expand)\n'
   printf '  ⎿  \033[39m\033[2m\033[3mThe user is asking about a Japanese proverb\n'
