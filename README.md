@@ -96,7 +96,10 @@ If `~/.npmrc` has incompatible `prefix`/`globalconfig` entries, setup adjusts th
 Experimental agents:
 
 - Antigravity is launched as `agy -c` by default (falling back to `antigravity -c` when needed).
-  - If missing on macOS, setup installs the Homebrew cask `antigravity-cli`.
+  - If missing on macOS, setup prefers the Homebrew cask `antigravity-cli`.
+  - If Homebrew is unavailable/skipped, or on Ubuntu/Linux-family systems,
+    setup can run the official installer:
+    `curl -fsSL https://antigravity.google/cli/install.sh | bash`.
   - loglm treats Antigravity as the Google/Gemini-family coding agent.
   - Gemini CLI is no longer a supported launch target in loglm because individual
     Gemini CLI authentication may redirect to Antigravity.
