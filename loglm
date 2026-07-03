@@ -94,7 +94,7 @@ ensure_runtime_notes() {
 
 claude_has_history() {
   local encoded
-  encoded="$(printf '%s' "$WORK_DIR" | LC_ALL=C sed -E 's#[^A-Za-z0-9._-]#-#g')"
+  encoded="$(perl -MEncode=decode -e 'my $s = decode("UTF-8", shift); $s =~ s/[^A-Za-z0-9._-]/-/g; print $s' "$WORK_DIR")"
   compgen -G "$HOME/.claude/projects/$encoded/*.jsonl" > /dev/null 2>&1
 }
 

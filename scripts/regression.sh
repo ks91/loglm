@@ -674,11 +674,11 @@ pass "invalid repo check"
 # 7) Claude resume detection with Claude Code project path encoding
 CLAUDE_TMP="$(/usr/bin/mktemp -d)"
 trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP" "$CLAUDE_TMP" "$EXPERIMENTAL_TMP"' EXIT
-CLAUDE_WORK="$CLAUDE_TMP/Mobile Documents/iCloud~com~omz-software~Pythonista3/Documents"
+CLAUDE_WORK="$CLAUDE_TMP/Mobile Documents/早稲田大学/iCloud~com~omz-software~Pythonista3/Documents"
 mkdir -p "$CLAUDE_WORK" "$CLAUDE_TMP/home" "$CLAUDE_TMP/bin"
 printf 'claude\n' > "$CLAUDE_WORK/.loglm_agent"
 claude_project_path="$(cd "$CLAUDE_WORK" && pwd -P)"
-claude_project_key="$(printf '%s' "$claude_project_path" | LC_ALL=C sed -E 's#[^A-Za-z0-9._-]#-#g')"
+claude_project_key="$(perl -MEncode=decode -e 'my $s = decode("UTF-8", shift); $s =~ s/[^A-Za-z0-9._-]/-/g; print $s' "$claude_project_path")"
 mkdir -p "$CLAUDE_TMP/home/.claude/projects/$claude_project_key"
 printf '{}\n' > "$CLAUDE_TMP/home/.claude/projects/$claude_project_key/session.jsonl"
 
@@ -707,13 +707,13 @@ chmod +x "$CLAUDE_TMP/bin/script"
     LOGLM_TEST_SCRIPT_ARGS="$CLAUDE_TMP/script-args.out" \
     "$ROOT_DIR/loglm" >/tmp/loglm-test-claude-resume.out 2>/tmp/loglm-test-claude-resume.err
 )
-rg -q 'claude --continue' "$CLAUDE_TMP/script-args.out" || fail "claude should resume when Claude Code history exists for encoded project path"
+rg -q 'claude --continue' "$CLAUDE_TMP/script-args.out" || fail "claude should resume when Claude Code history exists for encoded Unicode project path"
 [[ -f "$CLAUDE_WORK/CLAUDE.md" ]] || fail "loglm should create CLAUDE.md runtime notes on Claude launch"
 rg -q 'loglm Platform Notes' "$CLAUDE_WORK/CLAUDE.md" || fail "CLAUDE.md should include loglm platform notes"
 rg -q '`loglm` is a wrapper command that launches coding agents' "$CLAUDE_WORK/CLAUDE.md" || fail "CLAUDE.md should explain what loglm is"
 rg -q 'Decode raw logs with: `loglm-decode logs/\*`' "$CLAUDE_WORK/CLAUDE.md" || fail "CLAUDE.md should tell Claude how to decode loglm logs"
 rg -q 'Build a chronological overview with: `loglm-timeline logs/\*\.decoded\.txt`' "$CLAUDE_WORK/CLAUDE.md" || fail "CLAUDE.md should mention loglm-timeline"
-pass "claude resume detection handles spaces and tildes in project path"
+pass "claude resume detection handles spaces, tildes, and Unicode in project path"
 
 # 7b) Experimental agent launch commands
 EXPERIMENTAL_TMP="$(/usr/bin/mktemp -d)"
