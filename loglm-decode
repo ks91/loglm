@@ -130,11 +130,40 @@ my $pending_cr = 0;
 my $cr_before_esc = 0;
 my $csi_param = q{};
 my $last_csi_param = q{};
+my $col = 0;
 my $profile = $ENV{LOGLM_DECODE_PROFILE} // q{};
 my $is_claude = ($profile eq "claude") ? 1 : 0;
 my $is_gemini = ($profile eq "gemini") ? 1 : 0;
 my $is_openclaw = ($profile eq "openclaw") ? 1 : 0;
 my $is_hermes = ($profile eq "hermes") ? 1 : 0;
+
+sub append_out {
+  my ($s) = @_;
+  $out .= $s;
+  my $last_nl = rindex($s, "\n");
+  if ($last_nl >= 0) {
+    $col = length($s) - $last_nl - 1;
+  } else {
+    $col += length($s);
+  }
+}
+
+sub append_newlines {
+  my ($n) = @_;
+  return unless $n > 0;
+  $out .= "\n" x $n;
+  $col = 0;
+}
+
+sub truncate_current_line {
+  my $last_nl = rindex($out, "\n");
+  if ($last_nl >= 0) {
+    substr($out, $last_nl + 1) = q{};
+  } else {
+    $out = q{};
+  }
+  $col = 0;
+}
 
 while (read(STDIN, $c, 1)) {
   my $b = ord($c);
@@ -143,7 +172,7 @@ while (read(STDIN, $c, 1)) {
     if ($pending_cr) {
       if ($b == 0x0A) {
         # CR+LF (including CR+CR+LF): single newline.
-        $out .= "\n";
+        append_newlines(1);
         $pending_cr = 0;
         next;
       } elsif ($b == 0x0D) {
@@ -159,12 +188,7 @@ while (read(STDIN, $c, 1)) {
         next;
       } else {
         # Lone CR: move to start of current line (overwrite semantics).
-        my $last_nl = rindex($out, "\n");
-        if ($last_nl >= 0) {
-          substr($out, $last_nl + 1) = q{};
-        } else {
-          $out = q{};
-        }
+        truncate_current_line();
         $pending_cr = 0;
         # Fall through to process $b normally.
       }
@@ -173,16 +197,21 @@ while (read(STDIN, $c, 1)) {
     if ($b == 0x1B) { # ESC
       $state = $ESC;
     } elsif ($b == 0x08) { # BS
-      substr($out, -1, 1, q{}) if length($out) > 0;
+      if (length($out) > 0) {
+        substr($out, -1, 1, q{});
+        $col-- if $col > 0;
+      }
     } elsif ($b == 0x0D) { # CR
       # Defer until next byte so CRLF does not become double newline.
       $pending_cr = 1;
-    } elsif ($b == 0x0A || $b == 0x09) { # LF/TAB
-      $out .= $c;
+    } elsif ($b == 0x0A) { # LF
+      append_newlines(1);
+    } elsif ($b == 0x09) { # TAB
+      append_out($c);
     } elsif ($b < 0x20 || $b == 0x7F) {
       # drop other C0 controls and DEL
     } else {
-      $out .= $c;
+      append_out($c);
     }
     next;
   }
@@ -208,22 +237,33 @@ while (read(STDIN, $c, 1)) {
       $last_csi_param = $csi_param;
       if ($cr_before_esc && ($b == ord("A") || $b == ord("B"))) {
         my $n = ($csi_param =~ /^(\d+)$/) ? int($csi_param) : 1;
-        $out .= "\n" x $n if $n > 0;
+        append_newlines($n);
         $cr_before_esc = 0;
       } elsif ($cr_before_esc) {
-        my $last_nl = rindex($out, "\n");
-        if ($last_nl >= 0) {
-          substr($out, $last_nl + 1) = q{};
-        } else {
-          $out = q{};
-        }
+        truncate_current_line();
         $cr_before_esc = 0;
       }
       if ($b == ord("C")) {
         # Cursor Forward: many TUIs (e.g. Claude Code/Ink) use ESC[nC
         # instead of literal spaces for inter-word/column spacing.
         my $n = ($csi_param =~ /^(\d+)$/) ? int($csi_param) : 1;
-        $out .= " " x $n if $n > 0;
+        append_out(" " x $n) if $n > 0;
+      } elsif ($b == ord("G")) {
+        # Cursor Horizontal Absolute: llama.cpp/Qwen thinking blocks rendered
+        # through Claude Code often use ESC[nG for column-aligned word gaps.
+        my $target = ($csi_param =~ /^(\d+)$/) ? int($csi_param) : 1;
+        my $spaces = $target - 1 - $col;
+        if ($spaces > 0) {
+          append_out(" " x $spaces);
+        } elsif ($out !~ /(?:\A|[ \t\n])\z/) {
+          # Display columns and UTF-8 byte counts diverge for CJK text.
+          # Preserve at least the word boundary that the TUI encoded.
+          append_out(" ");
+        }
+      } elsif ($b == ord("B")) {
+        # Cursor Down: treat as line movement for readable transcript output.
+        my $n = ($csi_param =~ /^(\d+)$/) ? int($csi_param) : 1;
+        append_newlines($n);
       }
       $state = $NORMAL;
     } else {
@@ -268,7 +308,7 @@ while (read(STDIN, $c, 1)) {
 }
 
 if ($pending_cr) {
-  $out .= "\n";
+  append_newlines(1);
 }
 
 # Trim trailing whitespace from each line (leftover from ESC[nC padding).

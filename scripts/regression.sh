@@ -243,6 +243,20 @@ rg -q '^❯ loglm って知ってる？$' "$DECODE_TMP/loglm-claude-log-20260501
 ! rg -q '^oglmって知ってる？$' "$DECODE_TMP/loglm-claude-log-20260501-143017-pid29336.decoded.txt" || fail "decode should drop partial Claude prompt echo when complete redraw exists"
 pass "decode Claude prompt redraw after CR cursor movement"
 
+{
+  printf '===== loglm start [claude]: 2026-05-01 14:40:00 +0900 =====\n\n'
+  printf '\033[38;2;102;102;102mThinking for \033[1m16s\033[22m… \033[38;2;102;102;102m(ctrl+o to expand)\n'
+  printf '  ⎿  \033[39m\033[2m\033[3mThe user is asking about a Japanese proverb\n'
+  printf '\033[6G\033[2m\033[3mhave\033[11Gthe\033[15Gcapacity\033[24Gto\033[27Gunderstand\033[38Git.\033[42GWait,\033[48Glet\033[52Gme\033[55Greconsider.\033[67GThe\033[71Guser\033[23m\033[22m\n'
+  printf '\033[6G\033[2m\033[3msomething.\033[17GThere'"'"'s\033[25Ga\033[27GJapanese\033[36Gproverb:\033[45G「猫に小僧」(neko\033[63Gni\033[66Gkozō)\033[72G-\033[74Gtelling\033[23m\033[22m\n'
+  printf '⏺ response after thinking\n'
+} > "$DECODE_TMP/loglm-claude-log-20260501-144000-pid29337.txt"
+
+run_cmd "$ROOT_DIR/loglm-decode" "$DECODE_TMP/loglm-claude-log-20260501-144000-pid29337.txt"
+rg -q 'have the capacity to understand it\. Wait, let me reconsider\. The user' "$DECODE_TMP/loglm-claude-log-20260501-144000-pid29337.decoded.txt" || fail "decode should preserve spaces in Claude expanded thinking blocks with ESC[nG"
+rg -q "something\\. There's a Japanese proverb: *「猫に小僧」\\(neko ni kozō\\) - telling" "$DECODE_TMP/loglm-claude-log-20260501-144000-pid29337.decoded.txt" || fail "decode should preserve Japanese/English thinking line spacing"
+pass "decode Claude expanded thinking block column spacing"
+
 cat > "$DECODE_TMP/loglm-claude-log-20260501-050000-pid5.txt" <<'EOF'
 ===== loglm start [claude]: 2026-05-01 05:00:00 +0900 =====
 
