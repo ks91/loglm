@@ -468,7 +468,7 @@ if ($is_claude) {
       ($is_antigravity && $line =~ /^(?:umes|s91|e\/ks91|academia|md\]|context\]|pubtechd|chd)\b/) ||
       ($is_antigravity && $line =~ /^(?:Generating|Working|Running|Considering|Analyzing|Organizing|Requesting|Genera|enerate|enerat|eratin|rating|ating|ing|ng|ra|ne|ki|ga|en|ne|or|t|i|xcontext|No matche)\.?\s*$/i) ||
       ($is_antigravity && $line =~ /^[[:alpha:]]{1,12}(?:\s+\(\s*\d+(?:\.\d+)?s\))?$/) ||
-      ($is_antigravity && length($line) <= 8 && $line !~ /^[>●○▸•#]/ && $line !~ /\d{4}/) ||
+      ($is_antigravity && $line =~ /^[\x00-\x7F]{1,8}$/ && $line !~ /^[>●○▸•#]/ && $line !~ /\d{4}/) ||
       ($is_antigravity && $line =~ /^(?:light|dark|solarized light|solarized dark|colorblind-friendly light|colorblind-friendly dark)$/) ||
       ($is_antigravity && $line =~ /^(?:└ Tip:|Tip:|↑\/↓ Navigate|Do you want to proceed\?)/) ||
       ($is_antigravity && $line =~ /^(?:Command|Full command:|Requesting permission for:)$/) ||
@@ -574,7 +574,12 @@ if ($is_claude) {
       next;
     }
 
-    if ($is_antigravity) {
+    if ($is_antigravity && $line =~ /^Resume(?: with)?:/) {
+      # Antigravity redraws the final assistant response after the resume hint.
+      # Keep that tail even if the same lines appeared in earlier redraws.
+      %recent_seen = ();
+      @recent_keys = ();
+    } elsif ($is_antigravity) {
       my $key = $line;
       $key =~ s/\s+/ /g;
       $key =~ s/^\s+//;
