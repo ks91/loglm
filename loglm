@@ -7,6 +7,7 @@ LOG_DIR="$WORK_DIR/logs"
 AGENT_FILE="$WORK_DIR/.loglm_agent"
 LOCAL_LLM_FILE="$WORK_DIR/.loglm_local_llm"
 LOCAL_LLM_MODEL_FILE="$WORK_DIR/.loglm_local_llm_model"
+LOCAL_LLM_DDG_MCP_FILE="$WORK_DIR/.loglm_local_llm_ddg_mcp"
 TODAY_LOCAL="$(date +%Y%m%d)"
 NOW_LOCAL="$(date +%Y%m%d-%H%M%S)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -94,6 +95,22 @@ ensure_agent_installed() {
   fi
 
   "$SETUP_DIR/ensure-agent.sh" "$agent"
+}
+
+maybe_setup_local_llm_duckduckgo_mcp() {
+  if [[ "$AGENT" != "local-llm" ]]; then
+    return 0
+  fi
+  if [[ -f "$LOCAL_LLM_DDG_MCP_FILE" ]]; then
+    return 0
+  fi
+  if ! resolve_setup_dir; then
+    echo "Warning: setup scripts not found; skipping DuckDuckGo MCP setup." >&2
+    return 0
+  fi
+  if ! LOGLM_LOCAL_LLM_DDG_MCP_MARKER="$LOCAL_LLM_DDG_MCP_FILE" "$SETUP_DIR/agent-local-llm.sh"; then
+    echo "Warning: DuckDuckGo MCP setup did not complete. local-llm can continue without web search." >&2
+  fi
 }
 
 antigravity_command() {
@@ -520,6 +537,7 @@ if [[ "$AGENT" == "local-llm" ]]; then
   configure_local_llm_url
   configure_local_llm_model
   ensure_local_llm_claude_settings
+  maybe_setup_local_llm_duckduckgo_mcp
   check_local_llm_endpoint "$LOCAL_LLM_URL"
 fi
 

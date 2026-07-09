@@ -773,6 +773,9 @@ chmod +x "$EXPERIMENTAL_TMP/bin/hermes"
 
 cat > "$EXPERIMENTAL_TMP/bin/claude" <<'EOF'
 #!/usr/bin/env bash
+if [[ -n "${LOGLM_TEST_CLAUDE_ARGS:-}" ]]; then
+  printf '%s\n' "$*" >> "$LOGLM_TEST_CLAUDE_ARGS"
+fi
 exit 0
 EOF
 chmod +x "$EXPERIMENTAL_TMP/bin/claude"
@@ -782,6 +785,12 @@ cat > "$EXPERIMENTAL_TMP/bin/llama-server" <<'EOF'
 exit 0
 EOF
 chmod +x "$EXPERIMENTAL_TMP/bin/llama-server"
+
+cat > "$EXPERIMENTAL_TMP/bin/uvx" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$EXPERIMENTAL_TMP/bin/uvx"
 
 cat > "$EXPERIMENTAL_TMP/bin/curl" <<'EOF'
 #!/usr/bin/env bash
@@ -840,6 +849,7 @@ rg -q 'hermes --continue' "$EXPERIMENTAL_TMP/hermes-script-args.out" || fail "He
 
 LOCAL_LLM_WORK="$EXPERIMENTAL_TMP/local-llm-work"
 mkdir -p "$LOCAL_LLM_WORK"
+printf 'skipped\n' > "$LOCAL_LLM_WORK/.loglm_local_llm_ddg_mcp"
 (
   cd "$LOCAL_LLM_WORK"
   printf 'local-llm\n' > .loglm_agent
@@ -856,6 +866,34 @@ rg -q '^http://127.0.0.1:18080$' "$LOCAL_LLM_WORK/.loglm_local_llm" || fail "loc
 rg -q '^qwen3.5:35b$' "$LOCAL_LLM_WORK/.loglm_local_llm_model" || fail "local-llm model should be detected and saved in project config"
 [[ -f "$LOCAL_LLM_WORK/CLAUDE.md" ]] || fail "local-llm launch should create CLAUDE.md runtime notes"
 rg -q '"CLAUDE_CODE_ATTRIBUTION_HEADER" : "0"' "$LOCAL_LLM_WORK/.claude/settings.local.json" || fail "local-llm launch should disable Claude Code attribution header in local settings"
+
+LOCAL_LLM_DDG_WORK="$EXPERIMENTAL_TMP/local-llm-ddg-work"
+mkdir -p "$LOCAL_LLM_DDG_WORK"
+(
+  cd "$LOCAL_LLM_DDG_WORK"
+  printf 'y\n' | HOME="$EXPERIMENTAL_TMP/home" \
+    PATH="$EXPERIMENTAL_TMP/bin:$PATH" \
+    LOGLM_PLATFORM=ubuntu \
+    LOGLM_TEST_CLAUDE_ARGS="$EXPERIMENTAL_TMP/local-llm-ddg-claude-args.out" \
+    "$ROOT_DIR/setup/agent-local-llm.sh" >/tmp/loglm-test-local-llm-ddg.out 2>/tmp/loglm-test-local-llm-ddg.err
+)
+rg -q "mcp add --scope local ddg-search -- $EXPERIMENTAL_TMP/bin/uvx duckduckgo-mcp-server" "$EXPERIMENTAL_TMP/local-llm-ddg-claude-args.out" || fail "local-llm setup should add DuckDuckGo MCP when accepted"
+rg -q '^configured$' "$LOCAL_LLM_DDG_WORK/.loglm_local_llm_ddg_mcp" || fail "local-llm setup should record DuckDuckGo MCP configuration"
+
+LOCAL_LLM_DDG_LAUNCH_WORK="$EXPERIMENTAL_TMP/local-llm-ddg-launch-work"
+mkdir -p "$LOCAL_LLM_DDG_LAUNCH_WORK"
+(
+  cd "$LOCAL_LLM_DDG_LAUNCH_WORK"
+  printf 'local-llm\n' > .loglm_agent
+  printf 'y\n' | HOME="$EXPERIMENTAL_TMP/home" \
+    PATH="$EXPERIMENTAL_TMP/bin:$PATH" \
+    LOGLM_PLATFORM=ubuntu \
+    LOGLM_TEST_CLAUDE_ARGS="$EXPERIMENTAL_TMP/local-llm-ddg-launch-claude-args.out" \
+    LOGLM_TEST_SCRIPT_ARGS="$EXPERIMENTAL_TMP/local-llm-ddg-launch-script-args.out" \
+    "$ROOT_DIR/loglm" --local-llm-url http://127.0.0.1:18080 >/tmp/loglm-test-local-llm-ddg-launch.out 2>/tmp/loglm-test-local-llm-ddg-launch.err
+)
+rg -q "mcp add --scope local ddg-search -- $EXPERIMENTAL_TMP/bin/uvx duckduckgo-mcp-server" "$EXPERIMENTAL_TMP/local-llm-ddg-launch-claude-args.out" || fail "local-llm launch should offer DuckDuckGo MCP setup when marker is missing"
+rg -q '^configured$' "$LOCAL_LLM_DDG_LAUNCH_WORK/.loglm_local_llm_ddg_mcp" || fail "local-llm launch should record DuckDuckGo MCP configuration"
 pass "experimental agent launch commands"
 
 # 8) Managed block list/remove behavior

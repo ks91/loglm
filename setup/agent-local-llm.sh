@@ -10,6 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 resolve_lang
 PLATFORM="$(detect_platform)"
+DDG_MCP_MARKER="${LOGLM_LOCAL_LLM_DDG_MCP_MARKER:-$PWD/.loglm_local_llm_ddg_mcp}"
 
 ensure_claude_code() {
   if command -v claude > /dev/null 2>&1; then
@@ -39,6 +40,97 @@ install_llama_with_apt() {
   fi
   run_as_root apt-get update
   run_as_root apt-get install -y llama.cpp
+}
+
+install_uv_with_brew() {
+  if ! command -v brew > /dev/null 2>&1; then
+    return 1
+  fi
+  brew_install_candidates "uv / uvx" uv
+}
+
+install_uv_with_official_installer() {
+  local installer tmp_installer
+  installer="https://astral.sh/uv/install.sh"
+  tmp_installer="$(mktemp)"
+  trap 'rm -f "$tmp_installer"' RETURN
+
+  if command -v curl > /dev/null 2>&1; then
+    curl -LsSf "$installer" > "$tmp_installer"
+  elif command -v wget > /dev/null 2>&1; then
+    wget -qO- "$installer" > "$tmp_installer"
+  else
+    say "エラー: uv 公式インストーラーの取得には curl または wget が必要です。" \
+        "Error: curl or wget is required to fetch the official uv installer." >&2
+    return 1
+  fi
+
+  say "公式インストーラーで uv / uvx をインストールします。" \
+      "Installing uv / uvx with the official installer."
+  sh "$tmp_installer"
+  rm -f "$tmp_installer"
+  trap - RETURN
+  ensure_dir_on_path_now_and_profile "$HOME/.local/bin"
+}
+
+ensure_uvx_for_duckduckgo() {
+  if command -v uvx > /dev/null 2>&1; then
+    return 0
+  fi
+
+  say "DuckDuckGo MCP には uvx が必要です。" \
+      "DuckDuckGo MCP requires uvx."
+
+  case "$PLATFORM" in
+    macos)
+      if ensure_homebrew; then
+        install_uv_with_brew || true
+      fi
+      if ! command -v uvx > /dev/null 2>&1; then
+        install_uv_with_official_installer || true
+      fi
+      ;;
+    ubuntu|wsl2|raspberrypi|chromeos|linux)
+      install_uv_with_official_installer || true
+      ;;
+    *)
+      if command -v brew > /dev/null 2>&1; then
+        install_uv_with_brew || true
+      fi
+      if ! command -v uvx > /dev/null 2>&1; then
+        install_uv_with_official_installer || true
+      fi
+      ;;
+  esac
+
+  command -v uvx > /dev/null 2>&1
+}
+
+configure_duckduckgo_mcp() {
+  local uvx_path
+
+  if [[ -f "$DDG_MCP_MARKER" ]]; then
+    return 0
+  fi
+
+  if ! prompt_yes_no \
+    "local-llm 用に DuckDuckGo MCP web search をセットアップしますか？" \
+    "Set up DuckDuckGo MCP web search for local-llm?"; then
+    printf 'skipped\n' > "$DDG_MCP_MARKER" 2>/dev/null || true
+    return 0
+  fi
+
+  if ! ensure_uvx_for_duckduckgo; then
+    say "エラー: uvx を準備できなかったため DuckDuckGo MCP をセットアップできませんでした。" \
+        "Error: could not prepare uvx, so DuckDuckGo MCP was not configured." >&2
+    return 1
+  fi
+
+  uvx_path="$(command -v uvx)"
+  say "Claude Code の local MCP server として DuckDuckGo を追加します: ddg-search" \
+      "Adding DuckDuckGo as a local Claude Code MCP server: ddg-search"
+  claude mcp add --scope local ddg-search -- "$uvx_path" duckduckgo-mcp-server
+  printf 'configured\n' > "$DDG_MCP_MARKER" 2>/dev/null || true
 }
 
 ensure_llama_server() {
@@ -83,6 +175,10 @@ ensure_llama_server() {
 
 ensure_claude_code
 ensure_llama_server
+if ! configure_duckduckgo_mcp; then
+  say "警告: DuckDuckGo MCP のセットアップを完了できませんでした。local-llm は web search なしで続行できます。" \
+      "Warning: DuckDuckGo MCP setup did not complete. local-llm can continue without web search." >&2
+fi
 
 say "local-llm サポートは experimental です。loglm は llama-server を起動しません。別ターミナルで起動してください。" \
     "local-llm support is experimental. loglm does not start llama-server; start it in another terminal."

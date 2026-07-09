@@ -124,7 +124,7 @@ Experimental agents:
     KV-cache slowdown caused by Claude Code attribution headers.
   - Start with `llama-server --ctx-size 32768`; use `8192` on small machines and
     `65536` or larger only when memory allows.
-- Antigravity, OpenClaw, Hermes Agent, and Local LLM support is experimental in loglm v0.2.x.
+- Antigravity, OpenClaw, Hermes Agent, and Local LLM support is experimental in loglm v0.3.x.
 - Experimental support is intended for macOS native and Ubuntu-family environments
   (Ubuntu, Ubuntu on Lima, and Ubuntu on WSL2), but actual installation depends on
   the upstream official installers.
@@ -135,18 +135,19 @@ Experimental agents:
   gateway implementing the Anthropic Messages API well enough for Claude Code.
   Routing Claude Code to non-Claude local models is experimental and not an
   Anthropic-supported configuration.
-- Claude Web Search is not available through this local LLM route. For lightweight
-  web search, consider a DuckDuckGo-based MCP/search tool; SearXNG, Brave Search,
-  or Tavily-backed tools are other options when you need stronger control or APIs.
-  DuckDuckGo MCP is optional; if the chosen server is Python-based, install
-  `uv`/`uvx` first and add it as a local Claude Code MCP server, for example:
+- Claude Web Search is not available through this local LLM route.
+  During local-llm setup, `loglm` asks whether to configure DuckDuckGo MCP web search.
+  If accepted, setup installs `uv`/`uvx` when needed and adds DuckDuckGo as a
+  local Claude Code MCP server:
 
   ```bash
-  brew install uv
   claude mcp add --scope local ddg-search -- "$(command -v uvx)" duckduckgo-mcp-server
   ```
 
   Then restart `loglm` and check the server with `/mcp` inside Claude Code.
+  The choice is remembered per project in `./.loglm_local_llm_ddg_mcp`.
+  SearXNG, Brave Search, or Tavily-backed tools can still be configured manually
+  when you need stronger control or APIs.
 - For OpenClaw prompt-agent installation, `loglm agent install ... --agent openclaw`
   also creates a temporary `SKILL.md` wrapper and runs
   `openclaw skills install <skill-dir> --as <repo-name>` when the `openclaw` command
