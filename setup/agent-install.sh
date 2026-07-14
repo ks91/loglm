@@ -335,6 +335,7 @@ runtime_context() {
 
 platform_block_content() {
   local ctx="$1"
+  local agent="${2:-}"
 
   case "$ctx" in
     macos)
@@ -458,6 +459,15 @@ EOF
 EOF
       ;;
   esac
+
+  if [[ "$agent" == "local-llm" && -f ".loglm_local_llm_ddg_mcp" ]]; then
+    if [[ "$(head -n 1 ".loglm_local_llm_ddg_mcp" | tr -d '[:space:]')" == "configured" ]]; then
+      cat <<'EOF'
+- DuckDuckGo MCP web search is configured as the Claude Code local MCP server `ddg-search`.
+- Use the available `ddg-search` MCP tools when current web information is needed; check `/mcp` if web search is unavailable.
+EOF
+    fi
+  fi
 }
 
 block_begin_platform() {
@@ -717,7 +727,7 @@ install_one_repo_for_agent() {
   fi
 
   pctx="$(runtime_context)"
-  pbody="$(platform_block_content "$pctx")"
+  pbody="$(platform_block_content "$pctx" "$agent")"
   ptmp="$(new_tmp_file)"
   printf '%s\n' "$pbody" > "$ptmp"
   polbody="$(policy_block_content)"
@@ -888,7 +898,7 @@ ensure_runtime_notes_for_agent() {
   fi
 
   pctx="$(runtime_context)"
-  pbody="$(platform_block_content "$pctx")"
+  pbody="$(platform_block_content "$pctx" "$agent")"
   ptmp="$(new_tmp_file)"
   printf '%s\n' "$pbody" > "$ptmp"
 

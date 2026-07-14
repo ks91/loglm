@@ -866,6 +866,7 @@ rg -q '^http://127.0.0.1:18080$' "$LOCAL_LLM_WORK/.loglm_local_llm" || fail "loc
 rg -q '^qwen3.5:35b$' "$LOCAL_LLM_WORK/.loglm_local_llm_model" || fail "local-llm model should be detected and saved in project config"
 [[ -f "$LOCAL_LLM_WORK/CLAUDE.md" ]] || fail "local-llm launch should create CLAUDE.md runtime notes"
 rg -q '"CLAUDE_CODE_ATTRIBUTION_HEADER" : "0"' "$LOCAL_LLM_WORK/.claude/settings.local.json" || fail "local-llm launch should disable Claude Code attribution header in local settings"
+! rg -q 'ddg-search' "$LOCAL_LLM_WORK/CLAUDE.md" || fail "local-llm runtime notes should not mention DuckDuckGo MCP when skipped"
 
 LOCAL_LLM_DDG_WORK="$EXPERIMENTAL_TMP/local-llm-ddg-work"
 mkdir -p "$LOCAL_LLM_DDG_WORK"
@@ -894,6 +895,7 @@ mkdir -p "$LOCAL_LLM_DDG_LAUNCH_WORK"
 )
 rg -q "mcp add --scope local ddg-search -- $EXPERIMENTAL_TMP/bin/uvx duckduckgo-mcp-server" "$EXPERIMENTAL_TMP/local-llm-ddg-launch-claude-args.out" || fail "local-llm launch should offer DuckDuckGo MCP setup when marker is missing"
 rg -q '^configured$' "$LOCAL_LLM_DDG_LAUNCH_WORK/.loglm_local_llm_ddg_mcp" || fail "local-llm launch should record DuckDuckGo MCP configuration"
+rg -q 'DuckDuckGo MCP web search is configured as the Claude Code local MCP server `ddg-search`' "$LOCAL_LLM_DDG_LAUNCH_WORK/CLAUDE.md" || fail "local-llm runtime notes should mention configured DuckDuckGo MCP"
 pass "experimental agent launch commands"
 
 # 8) Managed block list/remove behavior

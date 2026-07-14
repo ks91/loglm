@@ -531,7 +531,6 @@ else
 fi
 
 ensure_agent_installed "$AGENT"
-ensure_runtime_notes "$AGENT"
 
 if [[ "$AGENT" == "local-llm" ]]; then
   configure_local_llm_url
@@ -540,6 +539,8 @@ if [[ "$AGENT" == "local-llm" ]]; then
   maybe_setup_local_llm_duckduckgo_mcp
   check_local_llm_endpoint "$LOCAL_LLM_URL"
 fi
+
+ensure_runtime_notes "$AGENT"
 
 if [[ "$DAILY_LOG" -eq 1 ]]; then
   LOG_FILE="$LOG_DIR/loglm-${AGENT}-log-${TODAY_LOCAL}.txt"
