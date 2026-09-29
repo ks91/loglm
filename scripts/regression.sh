@@ -162,6 +162,26 @@ rg -q '^  Last line must survive\.$' "$DECODE_TMP/screen-closed.decoded.txt" || 
 rg -q '^Reconnect: codex resume test-session$' "$DECODE_TMP/screen-closed.decoded.txt" || fail "screen decode must retain normal output after alternate-screen exit"
 pass "Codex alternate-screen exit"
 
+{
+  printf '\033[?1049h\033[?2026h\033[8;1H› Ask Codex to do anything\033[10;1H? for shortcuts\033[?2026l'
+  # The footer vanishes during typing, but the input area stays on row 8.
+  printf '\033[?2026h\033[10;1H\033[K\033[8;1H› は\033[K\033[?2026l'
+  printf '\033[?2026h\033[2;1H› はじめよう\033[8;1H› Ask Codex to do anything\033[10;1H← for agents · ? for shortcuts\033[?2026l'
+  printf '\033[?2026h\033[1;1H│ >_ OpenAI Codex test banner │\033[3;1H• Ready for the first task.\033[?2026l'
+  printf '\033[?2026h\033[10;1H\033[K\033[8;1H› は\033[K\033[?2026l'
+  # The same single character is now a real submitted message in the history.
+  printf '\033[?2026h\033[4;1H› は\033[5;1H• Received the short message.\033[8;1H› Ask Codex to do anything\033[10;1H← for agents · ? for shortcuts\033[?2026l'
+  # A resized viewport relocates the composer; its old row is now history.
+  printf '\033[?2026h\033[8;1H› 次へ\033[K\033[9;1H• Continuing with the next task.\033[10;1H\033[K\033[12;1H› Ask Codex to do anything\033[14;1H← for agents · ? for shortcuts\033[?2026l\033[?1049l'
+} > "$DECODE_TMP/loglm-codex-composer.txt"
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-codex-composer.txt"
+composer_decoded="$DECODE_TMP/loglm-codex-composer.decoded.txt"
+[[ "$(rg -c '^› は$' "$composer_decoded")" == 1 ]] || fail "Codex must exclude typed fragments while retaining submitted short messages"
+[[ "$(rg -c '^› はじめよう$' "$composer_decoded")" == 1 ]] || fail "Codex must retain the completed short prompt exactly once"
+rg -q '^› 次へ$' "$composer_decoded" || fail "Codex must update the composer position after resizing"
+perl -Mutf8 -CSD -0777 -ne 'exit !/› はじめよう.*Ready for the first task\..*› は\n.*Received the short message\..*› 次へ/s' "$composer_decoded" || fail "Codex must retain submitted message order"
+pass "Codex composer survives temporary footer removal"
+
 # Older Codex can use an alternate-screen menu inside an inline transcript.
 printf '\033[?1049h\033[1;1HSelect a session\033[?1049l\n› Old inline prompt\n• Old inline answer\n' > "$DECODE_TMP/loglm-codex-legacy-menu.txt"
 run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-codex-legacy-menu.txt"

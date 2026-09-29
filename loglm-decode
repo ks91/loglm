@@ -155,6 +155,7 @@ sub codex_screen_segment {
   my $screen = decode("UTF-8", $segment, FB_DEFAULT);
   my (@rows, @transcript);
   my ($row, $column, $dirty, $depth) = (0, 0, 0, 0);
+  my $composer_row = -1;
   my $previous = q{};
   my $capture = sub {
     return unless $dirty;
@@ -164,12 +165,18 @@ sub codex_screen_segment {
     # The last prompt above the footer is the composer, not a submitted turn.
     my $footer = -1;
     for my $i (0 .. $#view) {
-      $footer = $i if $view[$i] =~ /(?:for agents.*for shortcuts|warning.*f2 to view)/;
+      $footer = $i if $view[$i] =~ /(?:for agents.*for shortcuts|warning.*f2 to view)/
+        || $view[$i] =~ /^\s*\? for shortcuts(?:\s|$)/;
     }
     if ($footer >= 0) {
       for (my $i = $footer; $i >= 0; $i--) {
-        if ($view[$i] =~ /^\s*›/) { splice @view, $i; last; }
+        if ($view[$i] =~ /^\s*›/) { $composer_row = $i; last; }
       }
+    }
+    # Typing can clear the footer without moving the composer. Keep excluding
+    # that row until a subsequent footer locates the input area again.
+    if ($composer_row >= 0 && $composer_row <= $#view && $view[$composer_row] =~ /^\s*›/) {
+      splice @view, $composer_row;
     }
     return if grep { /^\s*(?:Select Model|Select Reasoning|Trust this folder\?|(?:›\s*)?\/model\s+choose)/ } @view;
     @view = grep {
@@ -193,7 +200,8 @@ sub codex_screen_segment {
     }
     my ($best_score, $old_end, $new_end) = (0, -1, -1);
     for my $j (0 .. $#keys) {
-      next unless length($keys[$j]) >= 8;
+      # Even a one-character submitted prompt can anchor the next redraw.
+      next unless length($keys[$j]) >= 8 || $keys[$j] =~ /^›\s*\S/;
       for my $i (@{$positions{$keys[$j]} // []}) {
         my ($n, $score) = (0, 0);
         while ($i + $n < @transcript && $j + $n < @keys) {
