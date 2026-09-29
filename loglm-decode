@@ -367,11 +367,94 @@ sub claude_inline_recording {
   return encode("UTF-8", join("\n", @history) . "\n");
 }
 
+# Antigravity updates an inline viewport with cursor-up, erase, and character
+# edits. Reconstruct rows before filtering UI; individual code lines may repeat.
+sub antigravity_recording {
+  my ($raw) = @_;
+  return $raw unless $raw =~ /Antigravity CLI/ && $raw =~ /\e\[\d+A/;
+  my $text = decode("UTF-8", $raw, FB_DEFAULT);
+  my ($header) = $text =~ /^(===== loglm start [^\n]*)/m;
+  my (@rows, @saved);
+  my ($row, $column) = (0, 0);
+  while ($text =~ /\G(?:\e\[([0-?]*[ -\/]*)([@-~])|\e\][^\a\e]*(?:\a|\e\\)|\eP.*?\e\\|\e[()][^\e]|\e([MED])|\e.|([^\e]+))/gcs) {
+    my ($param, $final, $escape, $literal) = ($1, $2, $3, $4);
+    if (defined $escape) {
+      $row-- if $escape eq "M" && $row > 0;
+      $row++ if $escape eq "D" || $escape eq "E";
+      $column = 0 if $escape eq "E";
+    } elsif (defined $final) {
+      my @p = split /;/, $param;
+      my $n = $param =~ /^\d+$/ && $param > 0 ? int($param) : 1;
+      return $raw if $n > 10000;
+      if ($final eq "A") { $row -= $n; $row = 0 if $row < 0; }
+      elsif ($final eq "B") { $row += $n; }
+      elsif ($final eq "C") { $column += $n; }
+      elsif ($final eq "D") { $column -= $n; $column = 0 if $column < 0; }
+      elsif ($final eq "G") { $column = $n - 1; }
+      elsif ($final eq "Z") { $column = (int(($column - 1) / 8) - $n + 1) * 8; $column = 0 if $column < 0; }
+      elsif ($final eq "H" || $final eq "f" || $final eq "d") {
+        # Physical screen positions cannot address the accumulated scrollback.
+        # Retain it before starting a new absolute-positioned viewport.
+        push @saved, map { join(q{}, map { $_ // " " } @{$_ // []}) } @rows;
+        @rows = ();
+        $row = ($p[0] || 1) - 1;
+        $column = ($p[1] || 1) - 1 unless $final eq "d";
+      } elsif ($final eq "P") {
+        splice @{$rows[$row]}, $column, $n if $rows[$row] && $column < @{$rows[$row]};
+      } elsif ($final eq "X") {
+        $rows[$row][$_] = " " for $column .. $column + $n - 1;
+      } elsif ($final eq "M") {
+        splice @rows, $row, $n if $row < @rows;
+      } elsif ($final eq "K" || $final eq "J") {
+        my $mode = $param || 0;
+        $rows[$row] //= [];
+        if ($mode == 0) {
+          splice @{$rows[$row]}, $column if $column < @{$rows[$row]};
+          splice @rows, $row + 1 if $final eq "J" && $row + 1 < @rows;
+        } elsif ($mode == 1) {
+          $rows[$row][$_] = " " for 0 .. $column;
+          $rows[$_] = [] for $final eq "J" ? (0 .. $row - 1) : ();
+        } elsif ($mode == 2 || $mode == 3) {
+          if ($final eq "J") {
+            push @saved, map { join(q{}, map { $_ // " " } @{$_ // []}) } @rows;
+            @rows = ();
+          } else { $rows[$row] = []; }
+        }
+      }
+    } elsif (defined $literal) {
+      for my $ch (split //, $literal) {
+        if ($ch eq "\r") { $column = 0; next; }
+        if ($ch eq "\n") { $row++; next; }
+        if ($ch eq "\x08") { $column-- if $column; next; }
+        if ($ch eq "\t") { $column += 8 - $column % 8; next; }
+        next if $ch =~ /[\x00-\x1f\x7f]/;
+        return $raw if $column > 10000 || $row > 1000000;
+        $rows[$row] //= [];
+        if ($ch =~ /\p{Mark}/) {
+          my $at = $column - 1;
+          $at-- if $at > 0 && ($rows[$row][$at] // q{}) eq q{};
+          $rows[$row][$at] .= $ch if $at >= 0;
+          next;
+        }
+        push @{$rows[$row]}, " " while @{$rows[$row]} < $column;
+        $rows[$row][$column++] = $ch;
+        $rows[$row][$column++] = q{} if $ch =~ /[\p{East_Asian_Width=Wide}\p{East_Asian_Width=Fullwidth}]/;
+      }
+    }
+  }
+  push @saved, map { join(q{}, map { $_ // " " } @{$_ // []}) } @rows;
+  my $result = join("\n", @saved) . "\n";
+  $result = "$header\n$result" if defined $header && index($result, $header) < 0;
+  return encode("UTF-8", $result);
+}
+
 my $recording_input;
-if ($profile eq "codex" || $is_claude) {
+if ($profile eq "codex" || $is_claude || $is_antigravity) {
   local $/;
   $recording_input = <STDIN> // q{};
-  if ($is_claude) {
+  if ($is_antigravity) {
+    $recording_input = antigravity_recording($recording_input);
+  } elsif ($is_claude) {
     $recording_input = claude_inline_recording($recording_input);
   } else {
     $recording_input =~ s{(\e\[\?1049h.*?(?:\e\[\?1049l|\z))}{codex_screen_segment($1)}gse;
@@ -639,16 +722,43 @@ if ($is_claude) {
       $i++;
     }
   }
-} elsif ($is_gemini || $is_antigravity) {
+} elsif ($is_antigravity) {
+  # Preserve transcript content, including short code lines and repeated prompts.
+  # Only recognizable UI lines are disposable after viewport reconstruction.
+  # Exit hints can be inserted halfway through the redrawn final response.
+  my @resume_hints;
+  my $transcript = join("\n", @lines);
+  $transcript =~ s{^Resume with:\n[ \t]+agy --conversation=([A-Za-z0-9-]+)\n[ \t]+agy -c[ \t]*\n}{push @resume_hints, "Resume: agy --conversation=$1 (or -c)"; q{}}meg;
+  @lines = split /\n/, $transcript;
+  my $in_setup = 0;
+  my $pending_marker = 0;
+  for my $line (@lines) {
+    $line =~ s/\s+$//;
+    if ($pending_marker) {
+      $line =~ s/^  (?=\S)/> /;
+      $pending_marker = 0;
+    }
+    if ($line eq ">") { $pending_marker = 1; next; }
+    if ($line =~ /^\s*(?:Welcome to the Antigravity CLI|Select login method:|Terms of Service & Data Use|Accessing workspace:|Do you trust the contents of this project\?)/) {
+      $in_setup = 1;
+    }
+    $in_setup = 0 if $line =~ /^\s*Antigravity CLI\s+\d/;
+    next if $in_setup;
+    next if $line =~ /^\s*[\p{Block=Box_Drawing}]+\s*$/u;
+    next if $line =~ /^\s*(?:Antigravity CLI\s+[0-9.]+|Welcome to Antigravity CLI!)\s*$/;
+    next if $line =~ /^\s*Gemini\s+[0-9.]+\s+\S+\s+\([^)]+\)\s*$/;
+    next if $line =~ /^\s*(?:Shift\+Tab to accept edits|\? for shortcuts|>\s*Type your message or \@path\/to\/file)\s*$/i;
+    push @merged, $line;
+  }
+  for my $hint (@resume_hints) {
+    push @merged, $hint unless grep { $_ eq $hint } @merged;
+  }
+} elsif ($is_gemini) {
   my @normalized = ();
   my $pending_prompt;
   my $last_emitted_prompt;
   my $in_notice_block = 0;
   my $in_slash_menu = 0;
-  my $in_antigravity_setup = 0;
-  my %recent_seen = ();
-  my @recent_keys = ();
-  my %seen_prompts = ();
 
   for my $raw (@lines) {
     my $line = $raw;
@@ -663,23 +773,6 @@ if ($is_claude) {
       $line =~ s/\s+$//;
     } else {
       $line =~ s/\s+$//;
-    }
-
-    if ($is_antigravity) {
-      $line =~ s/^\s+//;
-      $line =~ s/\s+$//;
-
-      if ($line =~ /^(?:Welcome to the Antigravity CLI\. You are currently not signed in\.|Select login method:|Terms of Service & Data Use|Accessing workspace:|Do you trust the contents of this project\?)/) {
-        $in_antigravity_setup = 1;
-        next;
-      }
-      if ($in_antigravity_setup) {
-        if ($line =~ /^Antigravity CLI\s+[0-9.]+/) {
-          $in_antigravity_setup = 0;
-        } else {
-          next;
-        }
-      }
     }
 
     if ($in_notice_block) {
@@ -706,47 +799,6 @@ if ($is_claude) {
     # Drop frequent transient UI lines.
     if (
       $line eq q{} ||
-      ($is_antigravity && $line =~ /^Antigravity CLI\s+[0-9.]+$/) ||
-      ($is_antigravity && $line =~ /^Gemini\s+[0-9.]+\s+\S+\s+\([^)]+\)$/) ||
-      ($is_antigravity && $line =~ /^\S+@\S+\s*(?:\(Google AI Pro\))?$/) ||
-      ($is_antigravity && $line =~ /^\(Google AI Pro\)$/) ||
-      ($is_antigravity && $line =~ /^~\//) ||
-      ($is_antigravity && $line =~ /^Welcome to Antigravity CLI!$/) ||
-      ($is_antigravity && $line =~ /^Welcome to the Antigravity CLI/) ||
-      ($is_antigravity && $line =~ /^Your browser should open automatically\. If not:$/) ||
-      ($is_antigravity && $line =~ /^https:\/\/accounts\.google\.com\/o\/oauth2\/auth/) ||
-      ($is_antigravity && $line =~ /^[A-Za-z0-9_=&%.:+\/-]{40,}$/) ||
-      ($is_antigravity && $line =~ /^id&state=/) ||
-      ($is_antigravity && $line =~ /^If you aren.t automatically redirected, paste the authorization code below:$/) ||
-      ($is_antigravity && $line =~ /^authorization code\.\.\.$/) ||
-      ($is_antigravity && $line =~ /^\[Use arrow keys to navigate, Enter to select\]/) ||
-      ($is_antigravity && $line =~ /^\[Next\]$/) ||
-      ($is_antigravity && $line =~ /^\[Previous\]\s+\[Done\]$/) ||
-      ($is_antigravity && $line =~ /^Links:$/) ||
-      ($is_antigravity && $line =~ /^-\s+(?:Terms of Service|Privacy Policy):\s+https?:\/\//) ||
-      ($is_antigravity && $line =~ /^>\s*\d+\.\s+(?:Google OAuth|Use a Google Cloud project|Yes)$/) ||
-      ($is_antigravity && $line =~ /^>\s*\[x\]\s+Yes, I agree/) ||
-      ($is_antigravity && $line =~ /^(?:Google to collect|subject to the Google|and Google Privacy|choose to opt out|settings\.)/) ||
-      ($is_antigravity && $line =~ /^Yes, I trust this folder$/) ||
-      ($is_antigravity && $line =~ /\x{fffd}/u) ||
-      ($is_antigravity && $line =~ /^file:\/\//) ||
-      ($is_antigravity && $line =~ /^\(?file:\/\/\/?/) ||
-      ($is_antigravity && $line =~ /file:\/\/\//) ||
-      ($is_antigravity && $line =~ /^[\w.-]+\](?:\(|$)/) ||
-      ($is_antigravity && $line =~ /^(?:umes|s91|e\/ks91|academia|md\]|context\]|pubtechd|chd)\b/) ||
-      ($is_antigravity && $line =~ /^(?:Generating|Working|Running|Considering|Analyzing|Organizing|Requesting|Genera|enerate|enerat|eratin|rating|ating|ing|ng|ra|ne|ki|ga|en|ne|or|t|i|xcontext|No matche)\.?\s*$/i) ||
-      ($is_antigravity && $line =~ /^[[:alpha:]]{1,12}(?:\s+\(\s*\d+(?:\.\d+)?s\))?$/) ||
-      ($is_antigravity && $line =~ /^[\x00-\x7F]{1,8}$/ && $line !~ /^[>●○▸•#]/ && $line !~ /\d{4}/) ||
-      ($is_antigravity && $line =~ /^(?:light|dark|solarized light|solarized dark|colorblind-friendly light|colorblind-friendly dark)$/) ||
-      ($is_antigravity && $line =~ /^(?:└ Tip:|Tip:|↑\/↓ Navigate|Do you want to proceed\?)/) ||
-      ($is_antigravity && $line =~ /^(?:Command|Full command:|Requesting permission for:)$/) ||
-      ($is_antigravity && $line =~ /^\d+\.\s+Yes, and always allow/) ||
-      ($is_antigravity && $line =~ /^\d+\.\s+No$/) ||
-      ($is_antigravity && $line =~ /^↓\s+\d+\s+more$/) ||
-      ($is_antigravity && $line =~ m{^/[a-z][a-z0-9-]*\s+}) ||
-      ($is_antigravity && $line =~ /^[a-z][a-z0-9-]*\s+.+(?:background tasks|custom agents|release notes|workspace|context usage)/) ||
-      ($is_antigravity && $line =~ /^[│╰─]+$/) ||
-      ($is_antigravity && $line =~ /^[·◉✗⚠→★⚙]\s+(?:tool|task|error|warning|link|accent|dim):/) ||
       $line =~ /Waiting for auth/i ||
       $line =~ /Gemini CLI update available!/ ||
       $line =~ /Installed via Homebrew\./ ||
@@ -798,10 +850,7 @@ if ($is_claude) {
         (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
         (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
       ) {
-        if (!$is_antigravity || !$seen_prompts{$pending_prompt}) {
-          push @normalized, "> $pending_prompt";
-          $seen_prompts{$pending_prompt} = 1 if $is_antigravity;
-        }
+        push @normalized, "> $pending_prompt";
         $last_emitted_prompt = $pending_prompt;
       }
       $pending_prompt = $p;
@@ -830,39 +879,13 @@ if ($is_claude) {
         (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
         (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
       ) {
-        if (!$is_antigravity || !$seen_prompts{$pending_prompt}) {
-          push @normalized, "> $pending_prompt";
-          $seen_prompts{$pending_prompt} = 1 if $is_antigravity;
-        }
+        push @normalized, "> $pending_prompt";
         $last_emitted_prompt = $pending_prompt;
       }
       undef $pending_prompt;
     }
     if (defined $last_emitted_prompt && $line eq $last_emitted_prompt) {
       next;
-    }
-
-    if ($is_antigravity && $line =~ /^Resume(?: with)?:/) {
-      # Antigravity redraws the final assistant response after the resume hint.
-      # Keep that tail even if the same lines appeared in earlier redraws.
-      %recent_seen = ();
-      @recent_keys = ();
-    } elsif ($is_antigravity) {
-      my $key = $line;
-      $key =~ s/\s+/ /g;
-      $key =~ s/^\s+//;
-      $key =~ s/\s+$//;
-      if ($key ne q{} && $recent_seen{$key}) {
-        next;
-      }
-      if ($key ne q{}) {
-        $recent_seen{$key} = 1;
-        push @recent_keys, $key;
-        if (@recent_keys > 240) {
-          my $old = shift @recent_keys;
-          delete $recent_seen{$old};
-        }
-      }
     }
 
     push @normalized, $line;
@@ -874,9 +897,7 @@ if ($is_claude) {
       (length($pending_prompt) >= 4 || $pending_prompt =~ m{^/}) &&
       (!defined $last_emitted_prompt || $last_emitted_prompt ne $pending_prompt)
     ) {
-      if (!$is_antigravity || !$seen_prompts{$pending_prompt}) {
-        push @normalized, "> $pending_prompt";
-      }
+      push @normalized, "> $pending_prompt";
     }
   }
 
@@ -1098,7 +1119,7 @@ for my $line (@merged) {
   ) {
     next;
   }
-  next if defined $prev_cmp && $cmp eq $prev_cmp && $cmp ne q{};
+  next if !$is_antigravity && defined $prev_cmp && $cmp eq $prev_cmp && $cmp ne q{};
   push @dedup, $line_out;
   $prev_cmp = $cmp;
 }

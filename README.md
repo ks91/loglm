@@ -302,6 +302,11 @@ unsupported screen controls use the conservative stream decoder; some UI noise
 may remain. Expanded thinking views also use that path to retain visible thought
 text that may subsequently disappear from the screen.
 
+Antigravity inline redraws are reconstructed when its startup banner and
+cursor-up controls are present. Short code lines, indentation, repeated code,
+and repeated user prompts are preserved rather than treated as UI noise.
+Other recordings use the stream decoder and may retain more redraw artifacts.
+
 Build a compact timeline from decoded logs:
 
 ```bash

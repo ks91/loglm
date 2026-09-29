@@ -121,6 +121,42 @@ pass "version output"
 # 3) loglm-decode overlap trimming
 DECODE_TMP="$(/usr/bin/mktemp -d)"
 trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP" "$CLAUDE_TMP" "$EXPERIMENTAL_TMP"' EXIT
+# Antigravity inline redraws must preserve code and genuinely repeated turns.
+perl - "$DECODE_TMP/loglm-antigravity-inline.txt" <<'PERL'
+use strict;
+use warnings;
+use utf8;
+open my $out, ">:encoding(UTF-8)", $ARGV[0] or die $!;
+print {$out} "===== loglm start [antigravity]: test =====\r\nAntigravity CLI 1.0.16\r\n";
+print {$out} "> hi\r\n  temporary answer\r\n\e[1A\r\e[K  日本語\e[10GOK\r\n";
+for (1..2) {
+  print {$out} "> hi\r\n    #include <stdio.h>\r\n    int main(void) {\r\n        int ch;\r\n        {\r\n        }\r\n        }\r\n";
+}
+print {$out} ">\r\n  Please continue.\r\n";
+print {$out} "edit: AXBC\e[3D\e[P\r\n";
+print {$out} "erase: bad\e[3D\e[3XOK\r\n";
+print {$out} "Resume with:\r\n  agy --conversation=test-session\r\n  agy -c\r\n";
+print {$out} "  Final answer after the resume hint.\r\n  Last line is complete.";
+close $out;
+PERL
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-antigravity-inline.txt"
+ant_decoded="$DECODE_TMP/loglm-antigravity-inline.decoded.txt"
+[[ "$(rg -c '^> hi$' "$ant_decoded")" == 3 ]] || fail "Antigravity must retain repeated short prompts"
+[[ "$(rg -c '^    #include <stdio.h>$' "$ant_decoded")" == 2 ]] || fail "Antigravity must retain repeated code"
+[[ "$(rg -c '^        int ch;$' "$ant_decoded")" == 2 ]] || fail "Antigravity must retain short declarations and indentation"
+[[ "$(rg -c '^        }$' "$ant_decoded")" == 4 ]] || fail "Antigravity must retain consecutive closing braces"
+rg -q '^  日本語 OK$' "$ant_decoded" || fail "Antigravity must reconstruct CJK cursor columns"
+! rg -q 'temporary answer' "$ant_decoded" || fail "Antigravity must discard superseded rows"
+rg -q '^> Please continue\.$' "$ant_decoded" || fail "Antigravity must preserve multiline prompt markers"
+rg -q '^edit: ABC$' "$ant_decoded" || fail "Antigravity must handle character deletion"
+rg -q '^erase: OK$' "$ant_decoded" || fail "Antigravity must handle character erasure"
+rg -q '^  Final answer after the resume hint\.$' "$ant_decoded" || fail "Antigravity must retain the final response"
+rg -q '^  Last line is complete\.$' "$ant_decoded" || fail "Antigravity must flush unterminated lines"
+printf '> hi\nint ch;\n}\n}\n> hi\n' > "$DECODE_TMP/loglm-antigravity-plain.txt"
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-antigravity-plain.txt"
+[[ "$(rg -c '^}$' "$DECODE_TMP/loglm-antigravity-plain.decoded.txt")" == 2 ]] || fail "Antigravity plain fallback must retain braces"
+pass "Antigravity inline redraws, code preservation, and final response"
+
 # Full-screen Codex: partial redraws, scrolling, CJK columns, and EOF flushing.
 perl - "$DECODE_TMP/loglm-codex-screen.txt" <<'PERL'
 use strict;
