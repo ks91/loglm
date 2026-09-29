@@ -121,6 +121,54 @@ pass "version output"
 # 3) loglm-decode overlap trimming
 DECODE_TMP="$(/usr/bin/mktemp -d)"
 trap 'rm -rf "$TMP_WORK" "$NODE_TMP" "$DECODE_TMP" "$CLAUDE_TMP" "$EXPERIMENTAL_TMP"' EXIT
+# Full-screen Codex: partial redraws, scrolling, CJK columns, and EOF flushing.
+perl - "$DECODE_TMP/loglm-codex-screen.txt" <<'PERL'
+use strict;
+use warnings;
+use utf8;
+open my $out, ">:encoding(UTF-8)", $ARGV[0] or die $!;
+print {$out} "===== loglm start [codex]: screen test =====\n\e[?1049h";
+sub frame {
+  print {$out} "\e[?2026h\e[2J";
+  my $row = 1;
+  print {$out} "\e[" . $row++ . ";1H$_" for @_;
+  print {$out} "\e[12;1H› Ask Codex to do anything\e[14;1H← for agents · ? for shortcuts\e[?2026l";
+}
+frame("› Please check this project.", "• Preparing the answer");
+print {$out} "\e[?2026h\e[2;3HFinished\e[K\e[2;12Hthe answer.\e[?2026l";
+frame("› Please check this project.", "• Finished the answer.", "  日本語", "› Continue with the next step.");
+print {$out} "\e[?2026h\e[3;10HOK\e[?2026l";
+# Repaint the same screen, then scroll it upward without losing the first turn.
+frame("› Please check this project.", "• Finished the answer.", "  日本語 OK", "› Continue with the next step.");
+frame("  日本語 OK", "› Continue with the next step.", "• Another answer with cafe\x{301}.");
+frame("› Continue with the next step.", "• Another answer with cafe\x{301}.", "› Please check this project.", "• Final answer is complete.");
+# This is an incomplete final frame, as happens when a recording ends abruptly.
+print {$out} "\e[?2026h\e[5;1H  Last line must survive.";
+close $out;
+PERL
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-codex-screen.txt"
+screen_decoded="$DECODE_TMP/loglm-codex-screen.decoded.txt"
+[[ "$(rg -c '^› Please check this project\.$' "$screen_decoded")" == 2 ]] || fail "screen decode must retain genuinely repeated turns"
+[[ "$(rg -c '^• Finished the answer\.$' "$screen_decoded")" == 1 ]] || fail "screen decode must merge partial redraws"
+rg -q '^  日本語 OK$' "$screen_decoded" || fail "screen decode must use display columns for CJK"
+rg -q '^  Last line must survive\.$' "$screen_decoded" || fail "screen decode must flush the last frame"
+! rg -q 'Preparing|Ask Codex|for shortcuts' "$screen_decoded" || fail "screen decode must remove superseded text and composer UI"
+perl -Mutf8 -CSD -0777 -ne 'exit !/Finished the answer\..*日本語 OK.*Continue with the next step\..*cafe\x{301}.*Please check this project\..*Final answer is complete\..*Last line must survive\./s' "$screen_decoded" || fail "screen decode must preserve conversation order and combining marks"
+pass "Codex full-screen redraw and scroll decoding"
+
+printf '\033[?2026l\033[?1049l\nReconnect: codex resume test-session\n' >> "$DECODE_TMP/loglm-codex-screen.txt"
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap -o "$DECODE_TMP/screen-closed.decoded.txt" "$DECODE_TMP/loglm-codex-screen.txt"
+rg -q '^  Last line must survive\.$' "$DECODE_TMP/screen-closed.decoded.txt" || fail "screen decode must retain text on alternate-screen exit"
+rg -q '^Reconnect: codex resume test-session$' "$DECODE_TMP/screen-closed.decoded.txt" || fail "screen decode must retain normal output after alternate-screen exit"
+pass "Codex alternate-screen exit"
+
+# Older Codex can use an alternate-screen menu inside an inline transcript.
+printf '\033[?1049h\033[1;1HSelect a session\033[?1049l\n› Old inline prompt\n• Old inline answer\n' > "$DECODE_TMP/loglm-codex-legacy-menu.txt"
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-codex-legacy-menu.txt"
+printf 'Select a session\n› Old inline prompt\n• Old inline answer\n' > "$DECODE_TMP/legacy-expected.txt"
+cmp -s "$DECODE_TMP/legacy-expected.txt" "$DECODE_TMP/loglm-codex-legacy-menu.decoded.txt" || fail "legacy Codex alternate-screen menu decoding changed"
+pass "legacy Codex menu compatibility"
+
 cat > "$DECODE_TMP/loglm-codex-log-20260403-010000-pid1.txt" <<'EOF'
 ===== loglm start [codex]: 2026-04-03 01:00:00 +0900 =====
 

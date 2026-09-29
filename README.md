@@ -289,6 +289,12 @@ This writes:
 
 - `logs/loglm-codex-log-20260307-100915-pid12345.decoded.txt`
 
+Codex inline and full-screen conversation logs are detected from their terminal
+output, without requiring a particular Codex version. Full-screen decoding
+reconstructs screen updates to preserve spacing and reduce repeated redraws.
+Only text emitted to the terminal can be recovered; collapsed tool details that
+were never displayed are not included.
+
 Build a compact timeline from decoded logs:
 
 ```bash

@@ -140,6 +140,146 @@ my $is_antigravity = ($profile eq "antigravity") ? 1 : 0;
 my $is_openclaw = ($profile eq "openclaw") ? 1 : 0;
 my $is_hermes = ($profile eq "hermes") ? 1 : 0;
 
+# Full-screen Codex draws updates at absolute coordinates. Reconstruct each
+# synchronized frame before joining its conversation viewport to the transcript.
+# Legacy inline rendering (including older full-screen menus) stays untouched.
+sub codex_screen_segment {
+  my ($segment) = @_;
+  my $plain = $segment;
+  $plain =~ s/\e\[[0-?]*[ -\/]*[@-~]//g;
+  return $segment unless $plain =~ /Ask Codex to do anything/
+    && $segment =~ /\e\[\d+;\d+H/;
+
+  my $screen = decode("UTF-8", $segment, FB_DEFAULT);
+  my (@rows, @transcript);
+  my ($row, $column, $dirty, $depth) = (0, 0, 0, 0);
+  my $previous = q{};
+  my $capture = sub {
+    return unless $dirty;
+    $dirty = 0;
+    my @view = map { join(q{}, @{$_ // []}) } @rows;
+    s/\s+$// for @view;
+    # The last prompt above the footer is the composer, not a submitted turn.
+    my $footer = -1;
+    for my $i (0 .. $#view) {
+      $footer = $i if $view[$i] =~ /(?:for agents.*for shortcuts|warning.*f2 to view)/;
+    }
+    if ($footer >= 0) {
+      for (my $i = $footer; $i >= 0; $i--) {
+        if ($view[$i] =~ /^\s*›/) { splice @view, $i; last; }
+      }
+    }
+    return if grep { /^\s*(?:Select Model|Select Reasoning|Trust this folder\?|(?:›\s*)?\/model\s+choose)/ } @view;
+    @view = grep {
+      /\S/ && !/^\s*(?:[\x{2800}-\x{28ff}\s]+|[╭╰│─\s]+|\+\s*Show details|└ Tip:.*|[←].*|›\s*(?:Ask Codex to do anything|Shutting down\.\.\.)|•\s*Working\s*\(.*|.*esc to interrupt.*|\S+\s+\S+\s+·\s+~\/.*)$/
+        && !/^\s*›\s*\/exit\s+exit Codex\s*$/
+    } @view;
+    # Ignore the welcome art and menus before the first conversation item.
+    if (!@transcript) {
+      shift @view while @view && $view[0] !~ /^\s*[›•]\s/;
+    }
+    return unless @view;
+    my $joined = join("\n", @view);
+    return if $joined eq $previous;
+    $previous = $joined;
+    my @keys = map { my $k = $_; $k =~ s/\s+/ /g; $k =~ s/^ | $//g; $k } @view;
+    my $start = @transcript > 200 ? @transcript - 200 : 0;
+    my %positions;
+    for my $i ($start .. $#transcript) {
+      my $k = $transcript[$i]; $k =~ s/\s+/ /g; $k =~ s/^ | $//g;
+      push @{$positions{$k}}, $i;
+    }
+    my ($best_score, $old_end, $new_end) = (0, -1, -1);
+    for my $j (0 .. $#keys) {
+      next unless length($keys[$j]) >= 8;
+      for my $i (@{$positions{$keys[$j]} // []}) {
+        my ($n, $score) = (0, 0);
+        while ($i + $n < @transcript && $j + $n < @keys) {
+          my $k = $transcript[$i + $n]; $k =~ s/\s+/ /g; $k =~ s/^ | $//g;
+          last if $k ne $keys[$j + $n];
+          $score += length($k); $n++;
+        }
+        if ($score > $best_score || ($score == $best_score && $i + $n > $old_end)) {
+          ($best_score, $old_end, $new_end) = ($score, $i + $n, $j + $n);
+        }
+      }
+    }
+    if ($best_score) {
+      # A viewport wholly contained in history is a redraw/scrollback view.
+      return if $new_end == @view && $old_end < @transcript;
+      splice @transcript, $old_end, @transcript - $old_end, @view[$new_end .. $#view];
+    } elsif (@transcript && @view == 1 && index($view[0], $transcript[-1]) == 0) {
+      $transcript[-1] = $view[0];
+    } else {
+      push @transcript, @view;
+    }
+  };
+  while ($screen =~ /\G(?:\e\[([0-?]*[ -\/]*)([@-~])|\e\][^\a\e]*(?:\a|\e\\)|\eP.*?\e\\|\e.|([^\e]+))/gcs) {
+    my ($param, $final, $text) = ($1, $2, $3);
+    if (defined $final) {
+      my @p = split /;/, $param;
+      my $n = $p[0] && $p[0] =~ /^\d+$/ ? $p[0] : 1;
+      if ($final eq "H" || $final eq "f") {
+        ($row, $column) = (($p[0] || 1) - 1, ($p[1] || 1) - 1);
+        $row = 1000 if $row > 1000; $column = 2000 if $column > 2000;
+      } elsif ($final eq "A") { $row -= $n; $row = 0 if $row < 0;
+      } elsif ($final eq "B") { $row += $n; $row = 1000 if $row > 1000;
+      } elsif ($final eq "C") { $column += $n; $column = 2000 if $column > 2000;
+      } elsif ($final eq "D") { $column -= $n; $column = 0 if $column < 0;
+      } elsif ($final eq "G") { $column = $n - 1;
+      } elsif ($final eq "K" || $final eq "J") {
+        my $mode = $p[0] || 0;
+        $rows[$row] //= [];
+        if ($mode == 0) {
+          splice @{$rows[$row]}, $column if $column < @{$rows[$row]};
+          splice @rows, $row + 1 if $final eq "J" && $row + 1 < @rows;
+        } elsif ($mode == 1) {
+          $rows[$row][$_] = " " for 0 .. $column;
+          $rows[$_] = [] for $final eq "J" ? (0 .. $row - 1) : ();
+        } elsif ($mode == 2 || $mode == 3) {
+          if ($final eq "J") { @rows = (); } else { $rows[$row] = []; }
+        }
+        $dirty = 1;
+      } elsif ($param eq "?2026") {
+        if ($final eq "h") { $depth++; }
+        elsif ($final eq "l") { $depth-- if $depth; $capture->() unless $depth; }
+      }
+    } elsif (defined $text) {
+      for my $ch (split //, $text) {
+        if ($ch eq "\n") { $row++; $row = 1000 if $row > 1000; next; }
+        if ($ch eq "\r") { $column = 0; next; }
+        if ($ch eq "\x08") { $column-- if $column; next; }
+        if ($ch eq "\t") { $column += 8 - $column % 8; next; }
+        next if $ch =~ /[\x00-\x1f\x7f]/;
+        $rows[$row] //= [];
+        if ($ch =~ /\p{Mark}/) {
+          my $at = $column - 1;
+          $at-- if $at > 0 && ($rows[$row][$at] // q{}) eq q{};
+          $rows[$row][$at] .= $ch if $at >= 0;
+          next;
+        }
+        next if $column > 2000;
+        push @{$rows[$row]}, " " while @{$rows[$row]} < $column;
+        $rows[$row][$column++] = $ch;
+        $rows[$row][$column++] = q{} if $ch =~ /[\p{East_Asian_Width=Wide}\p{East_Asian_Width=Fullwidth}]/;
+        $dirty = 1;
+      }
+    }
+  }
+  $capture->();
+  return "\n" . encode("UTF-8", join("\n", @transcript)) . "\n";
+}
+
+my $codex_input;
+if ($profile eq "codex") {
+  local $/;
+  $codex_input = <STDIN> // q{};
+  $codex_input =~ s{(\e\[\?1049h.*?(?:\e\[\?1049l|\z))}{codex_screen_segment($1)}gse;
+  close STDIN;
+  open STDIN, "<", \$codex_input or die "Cannot read Codex terminal recording: $!";
+  binmode(STDIN);
+}
+
 sub append_out {
   my ($s) = @_;
   $out .= $s;
