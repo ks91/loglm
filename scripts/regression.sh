@@ -315,6 +315,50 @@ rg -q 'have the capacity to understand it\. Wait, let me reconsider\. The user' 
 rg -q "something\\. There's a Japanese proverb: *「猫に小僧」\\(neko ni kozō\\) - telling" "$DECODE_TMP/loglm-claude-log-20260501-144000-pid29337.decoded.txt" || fail "decode should preserve Japanese/English thinking line spacing"
 pass "decode Claude expanded thinking block column spacing"
 
+{
+  printf '===== loglm start [claude]: inline test =====\r\n\0337\033[r\0338Claude Code v9.0.0\r\n'
+  printf '❯ Please review the following.\r\033[1B  Preserve this continuation.\r\033[2C\033[1B'
+  printf '✻ Working…\r\n\033[1A\r⏺ Finished writing.\033[K\r\n'
+  printf 'Training models is interesting.\r\nShort answer\r\n'
+  printf '\033(B日本語\033[8GOK\r\n'
+  printf '❯ \r\n⏵⏵ auto mode on (shift+tab to cycle) · ← for agents\r\n'
+  printf 'Last answer without a newline.'
+} > "$DECODE_TMP/loglm-claude-inline.txt"
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-claude-inline.txt"
+inline_decoded="$DECODE_TMP/loglm-claude-inline.decoded.txt"
+perl -Mutf8 -CSD -0777 -ne 'exit !/❯ Please review the following\.\n  Preserve this continuation\.\n⏺ Finished writing\./' "$inline_decoded" || fail "Claude inline redraw must preserve multiline prompt order"
+rg -q '^Training models is interesting\.$' "$inline_decoded" || fail "Claude must retain prose containing ing"
+rg -q '^Short answer$' "$inline_decoded" || fail "Claude must retain short English sentences"
+rg -q '^日本語 OK$' "$inline_decoded" || fail "Claude must handle charset selection and CJK display columns"
+rg -q '^Last answer without a newline\.$' "$inline_decoded" || fail "Claude must retain the final unterminated line"
+! rg -q 'Working|auto mode on|\(status\)' "$inline_decoded" || fail "Claude must discard superseded spinner text and input footer"
+pass "Claude inline screen reconstruction"
+
+# A home/clear redraw must not erase scrollback already captured.
+printf '\033[H\033[2K\033[1B\033[2K\033[H⏺ Answer after screen reset.\r\n' >> "$DECODE_TMP/loglm-claude-inline.txt"
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-claude-inline.txt"
+rg -q '^Training models is interesting\.$' "$inline_decoded" || fail "Claude home redraw must retain earlier text"
+rg -q '^⏺ Answer after screen reset\.$' "$inline_decoded" || fail "Claude home redraw must retain new text"
+pass "Claude home redraw preserves scrollback"
+
+# Without a complete startup screen, retain the conservative stream decoder.
+printf '❯ First line\r\033[1B  Final continuation\r\033[2C\033[1B\033[49m\033[K\r\n⏺ Training is useful.\nA short sentence\n\033(B' > "$DECODE_TMP/loglm-claude-fragment.txt"
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-claude-fragment.txt"
+rg -q '^  Final continuation$' "$DECODE_TMP/loglm-claude-fragment.decoded.txt" || fail "Claude CR horizontal-then-vertical move must not erase a continuation"
+rg -q '^⏺ Training is useful\.$' "$DECODE_TMP/loglm-claude-fragment.decoded.txt" || fail "Claude fragment must retain ing prose"
+rg -q '^A short sentence$' "$DECODE_TMP/loglm-claude-fragment.decoded.txt" || fail "Claude fragment must retain short prose"
+! rg -q '^B$' "$DECODE_TMP/loglm-claude-fragment.decoded.txt" || fail "Claude charset selector must not leak B"
+pass "Claude fragment compatibility"
+
+{
+  printf 'Claude Code v9.0.0\r\nThinking for 2s (ctrl+o to expand)\r\n'
+  printf 'Visible reasoning must survive.\r\n\033[1A\r\033[KFinal answer.\r\n\033[1B'
+} > "$DECODE_TMP/loglm-local-llm-thinking.txt"
+run_cmd "$ROOT_DIR/loglm-decode" --keep-overlap "$DECODE_TMP/loglm-local-llm-thinking.txt"
+rg -q '^Visible reasoning must survive\.$' "$DECODE_TMP/loglm-local-llm-thinking.decoded.txt" || fail "expanded Claude thinking must not be discarded when the UI overwrites it"
+rg -q '^Final answer\.$' "$DECODE_TMP/loglm-local-llm-thinking.decoded.txt" || fail "expanded Claude thinking must retain the final answer"
+pass "Claude expanded thinking fallback"
+
 cat > "$DECODE_TMP/loglm-claude-log-20260501-050000-pid5.txt" <<'EOF'
 ===== loglm start [claude]: 2026-05-01 05:00:00 +0900 =====
 

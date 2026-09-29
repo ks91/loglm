@@ -124,12 +124,14 @@ my $OSC = 3;
 my $OSC_ESC = 4;
 my $DCS = 5;
 my $DCS_ESC = 6;
+my $CHARSET = 7;
 
 my $state = $NORMAL;
 my $out = q{};
 my $c;
 my $pending_cr = 0;
 my $cr_before_esc = 0;
+my $cr_column = 0;
 my $csi_param = q{};
 my $last_csi_param = q{};
 my $col = 0;
@@ -270,13 +272,104 @@ sub codex_screen_segment {
   return "\n" . encode("UTF-8", join("\n", @transcript)) . "\n";
 }
 
-my $codex_input;
-if ($profile eq "codex") {
+# Ink inline rendering uses relative cursor moves to redraw its live tail. Keep
+# logical rows beyond the physical screen so committed scrollback is retained.
+# Preserve scrollback across home/clear redraws. Other absolute positioning and
+# expanded thinking views stay on the legacy path to avoid discarding text.
+sub claude_inline_recording {
+  my ($raw) = @_;
+  my $plain = $raw;
+  $plain =~ s/\e\[[0-?]*[ -\/]*[@-~]//g;
+  return $raw unless $plain =~ /Claude\s*Code\s*v\d/
+    && $raw =~ /\e\[\d+A/ && $raw =~ /\e\[\d+B/;
+  my $controls = $raw;
+  # Ink brackets a scroll-region reset with save/restore at startup and exit.
+  $controls =~ s/\e7\e\[r\e8//g;
+  return $raw if $controls =~ /\e\[[0-9;]+[Hr]|\e\[[0-9;]*[fSTLMEFdsu]|\e\[1J|\e[78DEM]|\e\[\?1049h/
+    || $plain =~ /Thinking for /;
+  my $text = decode("UTF-8", $raw, FB_DEFAULT);
+  my (@rows, @history);
+  my ($row, $column) = (0, 0);
+  my $save = sub {
+    my @view = map { my $s = join(q{}, @{$_ // []}); $s =~ s/\s+$//; $s } @rows;
+    @view = grep { !/^\s*(?:❯\s*|⏵⏵.*\(shift\+tab to cycle\).*|─{10,})$/ } @view;
+    shift @view while @view && $view[0] eq q{};
+    pop @view while @view && $view[-1] eq q{};
+    my @compact;
+    for my $line (@view) {
+      next if $line eq q{} && @compact && $compact[-1] eq q{};
+      push @compact, $line;
+    }
+    @view = @compact;
+    my $limit = @view < @history ? scalar @view : scalar @history;
+    my $overlap = 0;
+    for (my $n = $limit; $n >= 2; $n--) {
+      my $old = join("\n", @history[@history - $n .. $#history]);
+      my $new = join("\n", @view[0 .. $n - 1]);
+      if (length($new) >= 30 && $old eq $new) { $overlap = $n; last; }
+    }
+    push @history, @view[$overlap .. $#view];
+    @rows = ();
+  };
+  while ($text =~ /\G(?:\e\[([0-?]*[ -\/]*)([@-~])|\e\][^\a\e]*(?:\a|\e\\)|\eP.*?\e\\|\e[()][^\e]|\e.|([^\e]+))/gcs) {
+    my ($param, $final, $literal) = ($1, $2, $3);
+    if (defined $final) {
+      my $n = $param =~ /^\d+$/ && $param > 0 ? int($param) : 1;
+      return $raw if $n > 10000;
+      if ($final eq "H") { $save->(); ($row, $column) = (0, 0); }
+      elsif ($final eq "J" && $param =~ /^[23]$/) { $save->(); }
+      elsif ($final eq "A") { $row -= $n; $row = 0 if $row < 0; }
+      elsif ($final eq "B") { $row += $n; }
+      elsif ($final eq "C") { $column += $n; }
+      elsif ($final eq "D") { $column -= $n; $column = 0 if $column < 0; }
+      elsif ($final eq "G") { $column = $n - 1; }
+      elsif ($final eq "K" || $final eq "J") {
+        my $mode = $param || 0;
+        $rows[$row] //= [];
+        if ($mode == 0) {
+          splice @{$rows[$row]}, $column if $column < @{$rows[$row]};
+          splice @rows, $row + 1 if $final eq "J" && $row + 1 < @rows;
+        } elsif ($mode == 1) {
+          $rows[$row][$_] = " " for 0 .. $column;
+          $rows[$_] = [] for $final eq "J" ? (0 .. $row - 1) : ();
+        } elsif ($mode == 2 && $final eq "K") { $rows[$row] = []; }
+      }
+    } elsif (defined $literal) {
+      for my $ch (split //, $literal) {
+        if ($ch eq "\r") { $column = 0; next; }
+        if ($ch eq "\n") { $row++; next; }
+        if ($ch eq "\x08") { $column-- if $column; next; }
+        if ($ch eq "\t") { $column += 8 - $column % 8; next; }
+        next if $ch =~ /[\x00-\x1f\x7f]/;
+        return $raw if $column > 10000 || $row > 1000000;
+        $rows[$row] //= [];
+        if ($ch =~ /\p{Mark}/) {
+          my $at = $column - 1;
+          $at-- if $at > 0 && ($rows[$row][$at] // q{}) eq q{};
+          $rows[$row][$at] .= $ch if $at >= 0;
+          next;
+        }
+        push @{$rows[$row]}, " " while @{$rows[$row]} < $column;
+        $rows[$row][$column++] = $ch;
+        $rows[$row][$column++] = q{} if $ch =~ /[\p{East_Asian_Width=Wide}\p{East_Asian_Width=Fullwidth}]/;
+      }
+    }
+  }
+  $save->();
+  return encode("UTF-8", join("\n", @history) . "\n");
+}
+
+my $recording_input;
+if ($profile eq "codex" || $is_claude) {
   local $/;
-  $codex_input = <STDIN> // q{};
-  $codex_input =~ s{(\e\[\?1049h.*?(?:\e\[\?1049l|\z))}{codex_screen_segment($1)}gse;
+  $recording_input = <STDIN> // q{};
+  if ($is_claude) {
+    $recording_input = claude_inline_recording($recording_input);
+  } else {
+    $recording_input =~ s{(\e\[\?1049h.*?(?:\e\[\?1049l|\z))}{codex_screen_segment($1)}gse;
+  }
   close STDIN;
-  open STDIN, "<", \$codex_input or die "Cannot read Codex terminal recording: $!";
+  open STDIN, "<", \$recording_input or die "Cannot read terminal recording: $!";
   binmode(STDIN);
 }
 
@@ -312,6 +405,13 @@ while (read(STDIN, $c, 1)) {
   my $b = ord($c);
 
   if ($state == $NORMAL) {
+    if ($cr_before_esc && $b != 0x1B && $b != 0x0D) {
+      if ($b != 0x0A) {
+        truncate_current_line();
+        append_out(" " x $cr_column);
+      }
+      $cr_before_esc = 0;
+    }
     if ($pending_cr) {
       if ($b == 0x0A) {
         # CR+LF (including CR+CR+LF): single newline.
@@ -327,6 +427,7 @@ while (read(STDIN, $c, 1)) {
         # until we know the escape is not a vertical cursor move.
         $pending_cr = 0;
         $cr_before_esc = 1;
+        $cr_column = 0;
         $state = $ESC;
         next;
       } else {
@@ -367,6 +468,9 @@ while (read(STDIN, $c, 1)) {
       $state = $OSC;
     } elsif ($b == ord("P")) {
       $state = $DCS;
+    } elsif ($is_claude && ($b == ord("(") || $b == ord(")"))) {
+      # ISO-2022 character-set selection, e.g. ESC ( B from terminal input.
+      $state = $CHARSET;
     } else {
       # single escape sequence
       $state = $NORMAL;
@@ -382,9 +486,20 @@ while (read(STDIN, $c, 1)) {
         my $n = ($csi_param =~ /^(\d+)$/) ? int($csi_param) : 1;
         append_newlines($n);
         $cr_before_esc = 0;
-      } elsif ($cr_before_esc) {
+      } elsif ($cr_before_esc && $c !~ /^[CDGm]$/) {
         truncate_current_line();
         $cr_before_esc = 0;
+      }
+      # Ink can move horizontally or change style before moving to a new row.
+      # Defer those operations until the CR destination is known.
+      if ($cr_before_esc) {
+        my $n = ($csi_param =~ /^(\d+)$/) ? int($csi_param) : 1;
+        $cr_column += $n if $c eq "C";
+        $cr_column -= $n if $c eq "D";
+        $cr_column = $n - 1 if $c eq "G";
+        $cr_column = 0 if $cr_column < 0;
+        $state = $NORMAL;
+        next;
       }
       if ($b == ord("C")) {
         # Cursor Forward: many TUIs (e.g. Claude Code/Ink) use ESC[nC
@@ -421,6 +536,11 @@ while (read(STDIN, $c, 1)) {
     } elsif ($b == 0x1B) {
       $state = $OSC_ESC;
     }
+    next;
+  }
+
+  if ($state == $CHARSET) {
+    $state = $NORMAL;
     next;
   }
 
@@ -938,57 +1058,21 @@ for my $line (@merged) {
     $cmp =~ s/^\s+//;
     $cmp =~ s/\s+$//;
     my $is_prompt_line = ($cmp =~ /^[❯>›]\s*\S/) ? 1 : 0;
-    if ($cmp =~ /\(thinking\)/) {
+    # Recognize UI syntax, not arbitrary prose containing "ing" or short words.
+    next if $cmp =~ /^❯\s*$/;
+    next if $cmp =~ /^⏵⏵.*\(shift\+tab to cycle\)/;
+    next if $cmp =~ /^─{10,}$/;
+    if ($cmp =~ /^\(thinking\)$/i) {
       $cmp = "(thinking)";
       $line_out = "(thinking)";
     }
     if (
       !$is_prompt_line &&
-      $cmp ne "(thinking)" &&
-      length($cmp) <= 80 &&
-      $cmp =~ /ing/i &&
-      $cmp !~ m{[/:\\]}
+      $cmp =~ /^(?:[·✢✳✶✻✽]+\s*)?[\p{L}-]*ing(?:…|\.{3})(?:\s*\([^\n]*\))?$/i
     ) {
-      $cmp = "(status)";
-      $line_out = "(status)";
+      next;
     }
-    $cmp = "(spinner)" if $cmp =~ /^[·✢✳✶✻✽⏺]+$/;
-    if (
-      !$is_prompt_line &&
-      defined $prev_cmp &&
-      $prev_cmp eq "(status)" &&
-      $cmp =~ /^[[:alpha:][:space:]…-]{1,24}$/
-    ) {
-      $cmp = "(status)";
-      $line_out = "(status)";
-    }
-    if (
-      !$is_prompt_line &&
-      defined $prev_cmp &&
-      ($prev_cmp eq "(status)" || $prev_cmp eq "(spinner)" || $prev_cmp eq "(thinking)") &&
-      $cmp =~ /[[:alpha:]]/ &&
-      $cmp =~ /^[·✢✳✶✻✽⏺[:space:][:alnum:]…-]{1,24}$/
-    ) {
-      $cmp = "(status)";
-      $line_out = "(status)";
-    }
-    if (
-      !$is_prompt_line &&
-      $cmp =~ /[[:alpha:]][[:space:]]+[[:alpha:]]/ &&
-      length($cmp) <= 24 &&
-      $cmp =~ /^[·✢✳✶✻✽⏺[:space:][:alnum:]…-]+$/
-    ) {
-      $cmp = "(status)";
-      $line_out = "(status)";
-    }
-    if (
-      length($cmp) <= 28 &&
-      ($cmp =~ /[↑↓…]/ || $cmp =~ /[·✢✳✶✻✽⏺]/) &&
-      $cmp =~ /^[·✢✳✶✻✽⏺↑↓[:space:][:alnum:]…-]+$/
-    ) {
-      $cmp = "(status)";
-      $line_out = "(status)";
-    }
+    $cmp = "(spinner)" if $cmp =~ /^[·✢✳✶✻✽]+$/;
   } elsif ($is_gemini || $is_antigravity || $is_openclaw || $is_hermes) {
     $cmp =~ s/^\s+//;
     $cmp =~ s/\s+$//;
@@ -1457,6 +1541,20 @@ if ($profile eq "claude") {
         $best_chars = $sig_best_chars;
       }
     }
+  }
+}
+
+if ($profile eq "claude" && $best_offset > $body_start) {
+  # A repeated tail is not resumed context if a new user turn precedes it.
+  my %old_prompts = map { normalize_overlap_line($_) => 1 }
+    grep { /^\s*[❯>›]\s*\S/ } @prev;
+  for my $i ($body_start .. $best_offset - 1) {
+    next unless $curr[$i] =~ /^\s*[❯>›]\s*\S/;
+    next if $old_prompts{normalize_overlap_line($curr[$i])};
+    $best = 0;
+    $best_chars = 0;
+    $best_offset = -1;
+    last;
   }
 }
 

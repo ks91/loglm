@@ -295,6 +295,13 @@ reconstructs screen updates to preserve spacing and reduce repeated redraws.
 Only text emitted to the terminal can be recovered; collapsed tool details that
 were never displayed are not included.
 
+Claude Code inline redraws are reconstructed when the recording contains a
+startup banner and supported cursor controls. This keeps multiline prompts
+together and removes overwritten animation frames. Partial recordings and
+unsupported screen controls use the conservative stream decoder; some UI noise
+may remain. Expanded thinking views also use that path to retain visible thought
+text that may subsequently disappear from the screen.
+
 Build a compact timeline from decoded logs:
 
 ```bash
