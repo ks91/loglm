@@ -23,6 +23,40 @@ It also installs:
 
 If the install bin directory is not in `PATH`, `install.sh` appends it to your shell profile automatically.
 
+## Upgrade
+
+For a clean upgrade, we recommend uninstalling loglm and then reinstalling it.
+This removes obsolete files covered by the uninstaller before installing the
+current version from `main`. Exit any running loglm sessions first, then run the
+following in a regular terminal (Bash or Zsh):
+
+```bash
+(
+  set -e
+  set -o pipefail
+  curl -fsSL https://raw.githubusercontent.com/ks91/loglm/main/uninstall.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/ks91/loglm/main/install.sh | bash
+) && hash -r && loglm --version
+```
+
+This reinstalls loglm while preserving project logs, settings such as
+`.loglm_agent`, installed prompt agents, and project instructions such as
+`AGENTS.md` and `CLAUDE.md`. Coding agent applications are also left installed
+and are not upgraded by this procedure.
+
+If you use custom installation locations, export the same `LOGLM_INSTALL_DIR`
+and/or `LOGLM_HOME` values before running these commands.
+
+If installation fails because of a download or connection error, loglm may be
+temporarily unavailable or only partially installed. Restore connectivity and
+rerun the installation command in the **Install** section; there is no need to
+uninstall again. After it succeeds, run `hash -r` and `loglm --version` to verify
+the installed version. The installer does not automatically roll back a failed
+upgrade.
+
+Re-running the installer without uninstalling is also supported for routine
+updates, but files used only by older versions may remain.
+
 ## Uninstall
 
 ```bash
