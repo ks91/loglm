@@ -190,7 +190,8 @@ LOGLM_LANG=both loglm
   `--new` launches `hermes` without `--continue`.
 - For Local LLM, default launch uses Claude Code resume behavior (`claude --continue`
   when Claude Code history exists). `--new` starts a new Claude Code context.
-- `--agent`: Re-select the AI coding agent (`codex` / `claude` / `antigravity` / `openclaw` / `hermes` / `local-llm`).
+- `--agent`: Re-select the AI coding agent (`codex` / `claude` / `antigravity` / `openclaw` / `hermes` / `local-llm`). Install any missing prompt agents registered by loglm for the previously selected coding agent in this project, using their original GitHub or local sources and the new agent's compatible prompt files. Existing registrations with a local prompt file are left unchanged. GitHub sources require network access; local sources must still be available. If installation fails, launch stops and the previous selection is retained; successful partial installations remain for the next retry.
+- `--agent-only`: Re-select the coding agent without installing prompt agents. This also disables transfer when combined with `--agent`. Neither option removes prompt agents already installed for the destination. Manual instructions outside loglm-managed blocks are not transferred.
 - `--local-llm-url <url>`: Set the per-directory local LLM gateway URL
   (default: `http://127.0.0.1:8080`).
 - `--local-llm-model <name>`: Override the per-directory model name passed to

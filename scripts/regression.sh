@@ -1152,6 +1152,79 @@ rg -q 'This session is Claude Code routed through a local LLM gateway by loglm' 
 rg -q 'Test local-llm-specific prompt install' LOCAL-AGENT-SRC.md || fail "local-llm prompt file should use local-llm-specific source"
 pass "experimental agent prompt install works"
 
+# Switching coding agents transfers only missing managed prompt agents.
+(
+  SWITCH_WORK="$TMP_WORK/switch-work"
+  SWITCH_SOURCE="$TMP_WORK/switch source"
+  SWITCH_SECOND="$TMP_WORK/switch-second"
+  mkdir -p "$SWITCH_WORK" "$SWITCH_SOURCE" "$SWITCH_SECOND"
+  SWITCH_SOURCE="$(cd "$SWITCH_SOURCE" && pwd -P)"
+  SWITCH_SECOND="$(cd "$SWITCH_SECOND" && pwd -P)"
+  printf '# Generic prompt\n' > "$SWITCH_SOURCE/AGENT_INSTALL.md"
+  printf '# Claude-specific prompt\n' > "$SWITCH_SOURCE/AGENT_INSTALL_CLAUDE.md"
+  printf '# Second prompt\n' > "$SWITCH_SECOND/AGENT_INSTALL.md"
+  cd "$SWITCH_WORK"
+  "$ROOT_DIR/setup/agent-install.sh" install "$SWITCH_SOURCE" --agent codex --force
+  "$ROOT_DIR/setup/agent-install.sh" install "$SWITCH_SECOND" --agent codex --force
+  printf 'codex\n' > .loglm_agent
+  switch_launch() {
+    printf '%s\n' "$1" | env HOME="$EXPERIMENTAL_TMP/home" \
+      PATH="$EXPERIMENTAL_TMP/bin:$PATH" LOGLM_LANG=en \
+      LOGLM_TEST_SCRIPT_ARGS="$SWITCH_WORK/launch.out" \
+      "$ROOT_DIR/loglm" "${@:2}"
+  }
+  switch_launch 2 --agent > switch.out
+  [[ "$(cat .loglm_agent)" == claude ]] || fail "switch should save destination"
+  grep -Fq "repo=local:$SWITCH_SOURCE agent=claude " CLAUDE.md || fail "switch should transfer sources with spaces"
+  grep -Fq "repo=local:$SWITCH_SECOND agent=claude " CLAUDE.md || fail "switch should transfer all previous prompt agents"
+  rg -q 'Claude-specific prompt' SWITCH-SOURCE.md || fail "switch should use destination-specific source"
+  [[ -f launch.out ]] || fail "successful transfer should launch coding agent"
+
+  # A registered destination must not be reinstalled or require source access.
+  mv "$SWITCH_SOURCE" "$SWITCH_SOURCE.hidden"
+  mv "$SWITCH_SECOND" "$SWITCH_SECOND.hidden"
+  cp CLAUDE.md before.md
+  cp SWITCH-SOURCE.md before-prompt.md
+  printf 'codex\n' > .loglm_agent
+  switch_launch 2 --agent > switch.out
+  cmp CLAUDE.md before.md || fail "existing destination instructions should remain unchanged"
+  cmp SWITCH-SOURCE.md before-prompt.md || fail "existing prompt should not be overwritten"
+
+  # Missing local prompt files require repair; failure must keep previous selection.
+  mv SWITCH-SOURCE.md saved-prompt.md
+  printf 'codex\n' > .loglm_agent
+  rm -f launch.out
+  if switch_launch 2 --agent > switch.out 2>&1; then
+    fail "missing source should fail transfer"
+  fi
+  [[ "$(cat .loglm_agent)" == codex ]] || fail "failed transfer should retain previous selection"
+  [[ ! -f launch.out ]] || fail "failed transfer should not launch coding agent"
+  switch_launch 2 --agent --agent-only > switch.out
+  [[ "$(cat .loglm_agent)" == claude ]] || fail "agent-only should switch despite unavailable sources"
+  [[ ! -f SWITCH-SOURCE.md ]] || fail "agent-only should not install prompt files"
+
+  mv "$SWITCH_SOURCE.hidden" "$SWITCH_SOURCE"
+  mv "$SWITCH_SECOND.hidden" "$SWITCH_SECOND"
+  printf 'codex\n' > .loglm_agent
+  switch_launch 2 --agent > switch.out
+  [[ -f SWITCH-SOURCE.md ]] || fail "retry should repair missing prompt file"
+
+  # Codex and Antigravity share AGENTS.md but have separate registrations.
+  printf 'codex\n' > .loglm_agent
+  switch_launch 3 --agent > switch.out
+  grep -Fq "repo=local:$SWITCH_SOURCE agent=antigravity " AGENTS.md || fail "shared file still requires destination registration"
+  grep -Fq "repo=local:$SWITCH_SOURCE agent=codex " AGENTS.md || fail "switch should retain previous registration"
+
+  # Switching without a previous selection or managed prompt agents is a no-op.
+  mkdir empty
+  cd empty
+  switch_launch 2 --agent-only > switch.out
+  [[ "$(cat .loglm_agent)" == claude ]] || fail "agent-only should work on first launch"
+  switch_launch 3 --agent > switch.out
+  [[ "$(cat .loglm_agent)" == antigravity ]] || fail "switch should work with no prompt agents"
+)
+pass "coding-agent switch transfers missing prompt agents, supports opt-out and retry"
+
 # 9) Update validation
 set +e
 "$ROOT_DIR/loglm" agent update > /tmp/loglm-test-update-empty.out 2> /tmp/loglm-test-update-empty.err

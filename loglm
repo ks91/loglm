@@ -32,7 +32,9 @@ Options:
   --resume
       Open the agent's built-in session picker.
   --agent
-      Re-select the AI coding agent (codex / claude / antigravity / openclaw / hermes / local-llm).
+      Re-select the coding agent and install missing prompt agents from the previous agent.
+  --agent-only
+      Re-select the coding agent without installing prompt agents.
   --local-llm-url <url>
       Set the Anthropic-compatible local LLM gateway URL for local-llm.
       Default: http://127.0.0.1:8080
@@ -401,7 +403,9 @@ select_agent() {
     read -r choice
     if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#SUPPORTED_AGENTS[@]} )); then
       AGENT="${SUPPORTED_AGENTS[$((choice - 1))]}"
-      printf '%s\n' "$AGENT" > "$AGENT_FILE"
+      if [[ "${1:-1}" -eq 1 ]]; then
+        printf '%s\n' "$AGENT" > "$AGENT_FILE"
+      fi
       echo "Selected: $AGENT"
       return
     fi
@@ -443,6 +447,7 @@ FORCE_NEW=0
 CHOOSE_RESUME=0
 DANGEROUS_MODE=0
 CHOOSE_AGENT=0
+INHERIT_PROMPT_AGENTS=1
 DAILY_LOG=0
 LOCAL_LLM_URL=""
 LOCAL_LLM_MODEL=""
@@ -461,6 +466,11 @@ while (($# > 0)); do
       ;;
     --agent)
       CHOOSE_AGENT=1
+      shift
+      ;;
+    --agent-only)
+      CHOOSE_AGENT=1
+      INHERIT_PROMPT_AGENTS=0
       shift
       ;;
     --local-llm-url)
@@ -516,8 +526,11 @@ if [[ "$FORCE_NEW" -eq 1 && "$CHOOSE_RESUME" -eq 1 ]]; then
   exit 2
 fi
 
+PREVIOUS_AGENT=""
+[[ ! -f "$AGENT_FILE" ]] || PREVIOUS_AGENT="$(cat "$AGENT_FILE")"
+
 if [[ "$CHOOSE_AGENT" -eq 1 || ! -f "$AGENT_FILE" ]]; then
-  select_agent
+  select_agent 0
 else
   AGENT="$(cat "$AGENT_FILE")"
   valid=0
@@ -526,7 +539,7 @@ else
   done
   if [[ "$valid" -eq 0 ]]; then
     echo "Warning: unknown agent '$AGENT' stored in $AGENT_FILE. Re-selecting." >&2
-    select_agent
+    select_agent 0
   fi
 fi
 
@@ -540,6 +553,24 @@ if [[ "$AGENT" == "local-llm" ]]; then
   check_local_llm_endpoint "$LOCAL_LLM_URL"
 fi
 
+if [[ "$CHOOSE_AGENT" -eq 1 && "$INHERIT_PROMPT_AGENTS" -eq 1 && "$PREVIOUS_AGENT" != "$AGENT" ]]; then
+  case "$PREVIOUS_AGENT" in
+    codex|claude|antigravity|openclaw|hermes|local-llm)
+      if ! resolve_setup_dir; then
+        echo "Error: setup scripts not found; cannot transfer prompt agents." >&2
+        exit 1
+      fi
+      if ! "$SETUP_DIR/agent-install.sh" inherit "$PREVIOUS_AGENT" --agent "$AGENT"; then
+        echo "Error: prompt-agent transfer failed. Previous coding-agent selection is unchanged." >&2
+        echo "Retry with --agent, or use --agent-only to switch without installing prompt agents." >&2
+        exit 1
+      fi
+      ;;
+  esac
+fi
+if [[ "$PREVIOUS_AGENT" != "$AGENT" ]]; then
+  printf '%s\n' "$AGENT" > "$AGENT_FILE"
+fi
 ensure_runtime_notes "$AGENT"
 
 if [[ "$DAILY_LOG" -eq 1 ]]; then

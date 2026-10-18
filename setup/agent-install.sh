@@ -848,6 +848,28 @@ repos_from_files() {
   done | sort -u
 }
 
+# Internal operation used by loglm --agent. Read only managed registrations
+# for the previous coding agent, even when both agents share an instruction file.
+inherit_prompt_agents() {
+  local previous="$1" next="$2"
+  local file target spec prompt
+  file="$(target_file_for_agent "$previous")"
+  target="$(target_file_for_agent "$next")"
+  [[ -f "$file" ]] || return 0
+  while IFS= read -r spec; do
+    [[ -n "$spec" ]] || continue
+    prompt="$(repo_prompt_filename "$spec")"
+    if [[ -f "$target" && -f "$prompt" ]] \
+      && grep -Fq "<!-- loglm:begin repo=$spec agent=$next " "$target" \
+      && grep -Fxq "$(block_end_repo "$spec" "$next")" "$target"; then
+      continue
+    fi
+    say "[$next] プロンプト・エージェントを引き継ぎます: $(display_name_for_spec "$spec")" \
+        "[$next] Installing prompt agent from $previous: $(display_name_for_spec "$spec")"
+    install_one_repo_for_agent "$spec" "$next" 1 || return 1
+  done < <(sed -n "s/^<!-- loglm:begin repo=\(.*\) agent=$previous source=.* -->$/\1/p" "$file" | sort -u)
+}
+
 run_install() {
   local spec="$1"
   local scope="$2"
@@ -1011,6 +1033,15 @@ case "$SCOPE" in
 esac
 
 case "$SUBCMD" in
+  inherit)
+    case "$TARGET_SPEC" in
+      codex|claude|antigravity|openclaw|hermes|local-llm) ;;
+      *) exit 2 ;;
+    esac
+    [[ "$SCOPE" != "all" ]] || exit 2
+    inherit_prompt_agents "$TARGET_SPEC" "$SCOPE"
+    ;;
+
   install)
     if [[ -z "$TARGET_SPEC" ]]; then
       say "ソース指定が必要です（GitHub またはローカルパス）。" \
